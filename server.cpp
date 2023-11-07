@@ -236,15 +236,12 @@ void resetSockInfo(SockInfo &sockInfo) {
 void shutdownSock()
 {
     SockInfo &sockInfo = *(SockInfo *)pthread_getspecific(pkey);
-    if (sockInfo.ssl == NULL)
-    {
-        shutdown(sockInfo.clntSock, SHUT_RDWR);
-    }
-    else
+    if (sockInfo.ssl != NULL)
     {
         SSL_shutdown(sockInfo.ssl);
         SSL_free(sockInfo.ssl);
     }
+    close(sockInfo.clntSock);
     resetSockInfo(sockInfo);
 }
 
