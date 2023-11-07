@@ -7,6 +7,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/bio.h>
+#include <pthread.h>
 
 using namespace std;
 
@@ -21,7 +22,7 @@ using namespace std;
     }
 
 int initServSock();
-int initClntSock(int servSock);
+void* initClntSock(void* arg);
 void shutdownSock(int clntSock, SSL *ssl);
 SSL* checkSLL(int clntSock);
 int readData(int clntSock, SSL *ssl, char *buf, int length);
@@ -69,7 +70,12 @@ int main()
 
     while (1)
     {
-        initClntSock(servSock);
+        struct sockaddr_in clntAddr;
+        socklen_t clntAddrLen = sizeof(clntAddr);
+        int clntSock = accept(servSock, (struct sockaddr *)&clntAddr, &clntAddrLen);
+        pthread_t tid;
+        pthread_create(&tid, NULL, initClntSock, &clntSock);
+        pthread_detach(tid);
     }
 
     shutdown(servSock, SHUT_RDWR);
@@ -96,15 +102,13 @@ int initServSock()
     return servSock;
 }
 
-int initClntSock(int servSock)
+void* initClntSock(void* arg)
 {
     SSL *ssl;
     int err;
     char buf[10240];
-    struct sockaddr_in clntAddr;
-    socklen_t clntAddrLen = sizeof(clntAddr);
-    int clntSock = accept(servSock, (struct sockaddr *)&clntAddr, &clntAddrLen);
-
+    int clntSock = *((int *)arg);
+    
     cout<<"clntSock:"<<clntSock<<endl;
 
     ssl = checkSLL(clntSock);
@@ -153,7 +157,7 @@ int initClntSock(int servSock)
 
     shutdownSock(clntSock, ssl);
 
-    return clntSock;
+    return NULL;
 }
 
 int readData(int clntSock, SSL *ssl, char *buf, int length) {
