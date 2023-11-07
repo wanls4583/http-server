@@ -11,20 +11,34 @@
 
 using namespace std;
 
-#define CHK_NULL(x)  \
-    if ((x) == NULL) \
-    exit(1)
+#define CHK_NULL(x)                 \
+    if ((x) == NULL)                \
+    {                               \
+        cout << "CHK_NULL" << endl; \
+        shutdownSock();             \
+        pthread_exit(NULL);         \
+    }
 #define CHK_SSL(err)                 \
     if ((err) == -1)                 \
     {                                \
         ERR_print_errors_fp(stderr); \
-        exit(2);                     \
+        cout << "CHK_SSL" << endl;   \
+        shutdownSock();              \
+        pthread_exit(NULL);          \
     }
 
+struct SockInfo
+{
+    SSL *ssl;
+    int clntSock;
+};
+
 int initServSock();
-void* initClntSock(void* arg);
-void shutdownSock(int clntSock, SSL *ssl);
-SSL* checkSLL(int clntSock);
+void *initClntSock(void *arg);
+void shutdownSock();
+void initSockInfos();
+void resetSockInfo(SockInfo &sockInfo);
+SSL *checkSLL(int clntSock);
 int readData(int clntSock, SSL *ssl, char *buf, int length);
 int writeData(int clntSock, SSL *ssl, char *buf, int length);
 int notFound(int clntSock, SSL *ssl);
@@ -33,8 +47,12 @@ string findFileName(string s);
 string getType(string fName);
 
 const int port = 8000;
+const int MAX_SOCK = 100;
 static int servSock;
 static SSL_CTX *ctx;
+static SockInfo sockInfos[MAX_SOCK];
+
+pthread_key_t pkey; 
 
 void InitializeSSL()
 {
@@ -65,7 +83,9 @@ void InitializeSSL()
 
 int main()
 {
+    initSockInfos();
     InitializeSSL();
+    pthread_key_create(&pkey, NULL);
     servSock = initServSock();
 
     while (1)
@@ -73,8 +93,18 @@ int main()
         struct sockaddr_in clntAddr;
         socklen_t clntAddrLen = sizeof(clntAddr);
         int clntSock = accept(servSock, (struct sockaddr *)&clntAddr, &clntAddrLen);
+        int i = 0;
+        for (; i < 100; i++)
+        {
+            if (sockInfos[i].clntSock == -1)
+            {
+                sockInfos[i].clntSock = clntSock;
+                break;
+            }
+        }
+        cout << "clntSock:" << clntSock << ";i:" << i << endl;
         pthread_t tid;
-        pthread_create(&tid, NULL, initClntSock, &clntSock);
+        pthread_create(&tid, NULL, initClntSock, &sockInfos[i]);
         pthread_detach(tid);
     }
 
@@ -102,18 +132,19 @@ int initServSock()
     return servSock;
 }
 
-void* initClntSock(void* arg)
+void *initClntSock(void *arg)
 {
     SSL *ssl;
     int err;
     char buf[10240];
-    int clntSock = *((int *)arg);
-    
-    cout<<"clntSock:"<<clntSock<<endl;
+    SockInfo sockInfo = *((SockInfo *)arg);
+    int clntSock = sockInfo.clntSock;
 
-    ssl = checkSLL(clntSock);
+    pthread_setspecific(pkey, arg);
 
-    cout<<"ssl:"<<(ssl!=NULL)<<endl;
+    ssl = sockInfo.ssl = checkSLL(clntSock);
+
+    // cout<<"ssl:"<<(ssl!=NULL)<<endl;
 
     err = readData(clntSock, ssl, buf, sizeof(buf));
 
@@ -145,62 +176,86 @@ void* initClntSock(void* arg)
         }
         else
         {
-            cout<<fName<<endl;
+            cout << fName << endl;
             notFound(clntSock, ssl);
         }
     }
     else
     {
-        cout<<"empty:"<<buf<<endl;
+        cout << "empty:" << buf << endl;
         notFound(clntSock, ssl);
     }
 
-    shutdownSock(clntSock, ssl);
+    shutdownSock();
 
     return NULL;
 }
 
-int readData(int clntSock, SSL *ssl, char *buf, int length) {
+int readData(int clntSock, SSL *ssl, char *buf, int length)
+{
     int err;
-    if(ssl == NULL) {
+    if (ssl == NULL)
+    {
         read(clntSock, buf, length);
-    } else {
+    }
+    else
+    {
         err = SSL_read(ssl, buf, length);
         CHK_SSL(err);
     }
     return err;
 }
 
-int writeData(int clntSock, SSL *ssl, char *buf, int length) {
+int writeData(int clntSock, SSL *ssl, char *buf, int length)
+{
     int err;
-    if(ssl == NULL) {
+    if (ssl == NULL)
+    {
         err = write(clntSock, buf, length);
-    } else {
+    }
+    else
+    {
         err = SSL_write(ssl, buf, length);
         CHK_SSL(err);
     }
     return err;
 }
 
-void shutdownSock(int clntSock, SSL *ssl) {
-    if(ssl == NULL) {
-        shutdown(clntSock, SHUT_RDWR);
-    } else {
-        SSL_shutdown(ssl);
-        SSL_free(ssl);
+void initSockInfos() {
+    for (int i = 0; i < MAX_SOCK; i++)
+    {
+        resetSockInfo(sockInfos[i]);
     }
-    shutdown(servSock, SHUT_RDWR);
-    
 }
 
-SSL* checkSLL(int clntSock)
+void resetSockInfo(SockInfo &sockInfo) {
+    sockInfo.clntSock = -1;
+    sockInfo.ssl = NULL;
+}
+
+void shutdownSock()
+{
+    SockInfo &sockInfo = *(SockInfo *)pthread_getspecific(pkey);
+    if (sockInfo.ssl == NULL)
+    {
+        shutdown(sockInfo.clntSock, SHUT_RDWR);
+    }
+    else
+    {
+        SSL_shutdown(sockInfo.ssl);
+        SSL_free(sockInfo.ssl);
+    }
+    resetSockInfo(sockInfo);
+}
+
+SSL *checkSLL(int clntSock)
 {
     char buf[2];
     SSL *ssl = NULL;
     memset(buf, 0, sizeof(buf));
     recv(clntSock, buf, 2, MSG_PEEK);
     // recv(clntSock, buf, 2, MSG_PEEK|MSG_DONTWAIT);
-    cout<<"checkSLL:"<<buf[0]<<buf[1]<<endl;
+    // cout<<"checkSLL:"<<buf[0]<<buf[1]<<endl;
     if (buf[0] == 0x16 && buf[1] == 0x03)
     {
         X509 *client_cert;
