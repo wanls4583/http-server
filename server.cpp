@@ -48,7 +48,7 @@ char *readFile(ifstream &inFile, int &len);
 string findFileName(string s);
 string getType(string fName);
 
-const int port = 8000;
+const int port = 8001;
 const int MAX_SOCK = 100;
 static int servSock;
 static SSL_CTX *ctx;

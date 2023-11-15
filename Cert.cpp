@@ -24,14 +24,24 @@ void Cert::rsaCallback(int p, int n, void *arg)
     fputc(c, stderr);
 };
 
-int Cert::add_ext(STACK_OF(X509_EXTENSION) *sk, int nid, char *value)
+int Cert::add_ext(X509 *cert, int nid, char *value)
 {
     X509_EXTENSION *ex;
-    ex = X509V3_EXT_conf_nid(NULL, NULL, nid, value);
+    X509V3_CTX ctx;
+    /* This sets the 'context' of the extensions. */
+    /* No configuration database */
+    X509V3_set_ctx_nodb(&ctx);
+    /*
+     * Issuer and subject certs: both the target since it is self signed, no
+     * request and no CRL
+     */
+    X509V3_set_ctx(&ctx, cert, cert, NULL, NULL, 0);
+    ex = X509V3_EXT_conf_nid(NULL, &ctx, nid, value);
     if (!ex)
         return 0;
-    sk_X509_EXTENSION_push(sk, ex);
 
+    X509_add_ext(cert, ex, -1);
+    X509_EXTENSION_free(ex);
     return 1;
 }
 
@@ -40,7 +50,6 @@ int Cert::mkreq(X509_REQ **csr, EVP_PKEY **privateKey, int serial, int days)
     X509_REQ *x;
     EVP_PKEY *pk;
     X509_NAME *name = NULL;
-    STACK_OF(X509_EXTENSION) *exts = NULL;
 
     if ((pk = EVP_PKEY_new()) == NULL){
         return 0;
@@ -63,9 +72,9 @@ int Cert::mkreq(X509_REQ **csr, EVP_PKEY **privateKey, int serial, int days)
      * the return value for errors...
      */
     unsigned char c[] = "CN";
-    unsigned char cn[] = "my.test.com";
-    unsigned char o[] = "lisong.com.cn";
-    unsigned char ou[] = "lisong.com";
+    unsigned char cn[] = "*.test.com";
+    unsigned char o[] = "Internet Widgits Pty Ltd";
+    unsigned char ou[] = "Internet Widgits Pty Ltd";
     X509_NAME_add_entry_by_txt(name, "C", MBSTRING_ASC, c, -1, -1, 0);
     X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, cn, -1, -1, 0);
     X509_NAME_add_entry_by_txt(name, "O", MBSTRING_ASC, o, -1, -1, 0);
@@ -86,8 +95,8 @@ int Cert::createCertFromRequestFile(EVP_PKEY **privateKey, X509 **domainCert)
     
     X509_REQ *csr = NULL;
     mkreq(&csr, privateKey, 0, 365);
-    RSA_print_fp(stdout, EVP_PKEY_get1_RSA(*privateKey), 0);
-    X509_REQ_print_fp(stdout, csr);
+    // RSA_print_fp(stdout, EVP_PKEY_get1_RSA(*privateKey), 0);
+    // X509_REQ_print_fp(stdout, csr);
 
     EVP_PKEY *userKey = NULL;
     X509 *userCert = NULL;
@@ -104,7 +113,9 @@ int Cert::createCertFromRequestFile(EVP_PKEY **privateKey, X509 **domainCert)
     // X509_set_subject_name(userCert, csr->req_info.subject);
     X509_set_subject_name(userCert, X509_REQ_get_subject_name(csr));
     X509_set_issuer_name(userCert, X509_get_issuer_name(rootCert));
+    add_ext(userCert, NID_subject_alt_name, "IP:127.0.0.1");
     X509_sign(userCert, rootKey, EVP_sha1()); //CA私钥签名
+
 
     *domainCert = userCert;
 

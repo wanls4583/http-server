@@ -19,7 +19,7 @@ private:
 public:
     Cert();
     static void rsaCallback(int p, int n, void *arg);
-    int add_ext(STACK_OF(X509_EXTENSION) *sk, int nid, char *value);
+    int add_ext(X509 *cert, int nid, char *value);
     int mkreq(X509_REQ **req, EVP_PKEY **privateKey, int serial, int days);
     int createCertFromRequestFile(EVP_PKEY **privateKey, X509 **domainCert);
 };
