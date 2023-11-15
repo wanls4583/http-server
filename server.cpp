@@ -8,6 +8,7 @@
 #include <openssl/err.h>
 #include <openssl/bio.h>
 #include <pthread.h>
+#include "Cert.h"
 
 using namespace std;
 
@@ -33,6 +34,7 @@ struct SockInfo
     int clntSock;
 };
 
+void initializeSSL();
 int initServSock();
 void *initClntSock(void *arg);
 void shutdownSock();
@@ -54,37 +56,10 @@ static SockInfo sockInfos[MAX_SOCK];
 
 pthread_key_t pkey; 
 
-void InitializeSSL()
-{
-    SSL_load_error_strings();
-    OpenSSL_add_ssl_algorithms();
-    ctx = SSL_CTX_new(TLS_server_method());
-    if (!ctx)
-    {
-        ERR_print_errors_fp(stderr);
-        exit(2);
-    }
-    if (SSL_CTX_use_certificate_file(ctx, "rootCA/server.crt", SSL_FILETYPE_PEM) <= 0)
-    {
-        ERR_print_errors_fp(stderr);
-        exit(3);
-    }
-    if (SSL_CTX_use_PrivateKey_file(ctx, "rootCA/server.key", SSL_FILETYPE_PEM) <= 0)
-    {
-        ERR_print_errors_fp(stderr);
-        exit(4);
-    }
-    if (!SSL_CTX_check_private_key(ctx))
-    {
-        fprintf(stderr, "Private key does not match the certificate public key\n");
-        exit(5);
-    }
-}
-
 int main()
 {
     initSockInfos();
-    InitializeSSL();
+    initializeSSL();
     pthread_key_create(&pkey, NULL);
     servSock = initServSock();
 
@@ -111,6 +86,48 @@ int main()
     shutdown(servSock, SHUT_RDWR);
 
     return 0;
+}
+
+void initializeSSL()
+{
+    EVP_PKEY *privateKey;
+    X509 *domainCert;
+    Cert cert;
+    cert.createCertFromRequestFile(&privateKey, &domainCert);
+
+    SSL_load_error_strings();
+    OpenSSL_add_ssl_algorithms();
+    ctx = SSL_CTX_new(TLS_server_method());
+    if (!ctx)
+    {
+        ERR_print_errors_fp(stderr);
+        exit(2);
+    }
+    // if (SSL_CTX_use_certificate_file(ctx, "rootCA/server.crt", SSL_FILETYPE_PEM) <= 0)
+    // {
+    //     ERR_print_errors_fp(stderr);
+    //     exit(3);
+    // }
+    // if (SSL_CTX_use_PrivateKey_file(ctx, "rootCA/server.key", SSL_FILETYPE_PEM) <= 0)
+    // {
+    //     ERR_print_errors_fp(stderr);
+    //     exit(4);
+    // }
+    if (SSL_CTX_use_certificate(ctx, domainCert) <= 0)
+    {
+        ERR_print_errors_fp(stderr);
+        exit(3);
+    }
+    if (SSL_CTX_use_PrivateKey(ctx, privateKey) <= 0)
+    {
+        ERR_print_errors_fp(stderr);
+        exit(4);
+    }
+    if (!SSL_CTX_check_private_key(ctx))
+    {
+        fprintf(stderr, "Private key does not match the certificate public key\n");
+        exit(5);
+    }
 }
 
 int initServSock()

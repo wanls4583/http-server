@@ -10,6 +10,7 @@
                 "-L/opt/homebrew/opt/openssl@1.1/lib",
                 "-I/opt/homebrew/opt/openssl@1.1/include",
                 "-g",
+                // "${file}", //当前活动的文件
                 "${fileDirname}/*.cpp",
                 "-o",
                 "${fileDirname}/build/${fileBasenameNoExtension}",
@@ -34,7 +35,8 @@
                 "-L/opt/homebrew/opt/openssl@1.1/lib",
                 "-I/opt/homebrew/opt/openssl@1.1/include",
                 "-g",
-                "${file}",
+                // "${file}", //当前活动的文件
+                "${fileDirname}/*.cpp",
                 "-o",
                 "${fileDirname}/build/${fileBasenameNoExtension}",
                 "-lssl",
