@@ -48,7 +48,7 @@ char *readFile(ifstream &inFile, int &len);
 string findFileName(string s);
 string getType(string fName);
 
-const int port = 8001;
+const int port = 8000;
 const int MAX_SOCK = 100;
 static int servSock;
 static SSL_CTX *ctx;
@@ -138,7 +138,7 @@ int initServSock()
     memset(&servAddr, 0, sizeof(servAddr));
 
     servAddr.sin_family = AF_INET;
-    // servAddr.sin_addr.s_addr = inet_addr('127.0.0.1');
+    // servAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
     servAddr.sin_addr.s_addr = htonl(INADDR_ANY);
     servAddr.sin_port = htons(port);
 

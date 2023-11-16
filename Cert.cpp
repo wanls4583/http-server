@@ -72,7 +72,7 @@ int Cert::mkreq(X509_REQ **csr, EVP_PKEY **privateKey, int serial, int days)
      * the return value for errors...
      */
     unsigned char c[] = "CN";
-    unsigned char cn[] = "*.test.com";
+    unsigned char cn[] = "my.test.com";
     unsigned char o[] = "Internet Widgits Pty Ltd";
     unsigned char ou[] = "Internet Widgits Pty Ltd";
     X509_NAME_add_entry_by_txt(name, "C", MBSTRING_ASC, c, -1, -1, 0);
@@ -94,7 +94,11 @@ int Cert::createCertFromRequestFile(EVP_PKEY **privateKey, X509 **domainCert)
     EVP_PKEY * rootKey = PEM_read_bio_PrivateKey(rootKeyIn, NULL, 0, NULL); //根证书密钥对象
     
     X509_REQ *csr = NULL;
-    mkreq(&csr, privateKey, 0, 365);
+    int result = mkreq(&csr, privateKey, 0, 365);
+    if (!result) {
+        exit(1);
+        return 0;
+    }
     // RSA_print_fp(stdout, EVP_PKEY_get1_RSA(*privateKey), 0);
     // X509_REQ_print_fp(stdout, csr);
 
@@ -110,12 +114,16 @@ int Cert::createCertFromRequestFile(EVP_PKEY **privateKey, X509 **domainCert)
     X509_set_pubkey(userCert, userKey); //将公钥载入至用户证书
     EVP_PKEY_free(userKey);
 
-    // X509_set_subject_name(userCert, csr->req_info.subject);
     X509_set_subject_name(userCert, X509_REQ_get_subject_name(csr));
     X509_set_issuer_name(userCert, X509_get_issuer_name(rootCert));
-    add_ext(userCert, NID_subject_alt_name, "IP:127.0.0.1");
-    X509_sign(userCert, rootKey, EVP_sha1()); //CA私钥签名
-
+    add_ext(userCert, NID_subject_alt_name, "IP:127.0.0.1,DNS:my.test.com");
+    // add_ext(userCert, NID_basic_constraints, "critical,CA:FALSE");
+    // add_ext(userCert, NID_key_usage, "digitalSignature,nonRepudiation,keyEncipherment,dataEncipherment");
+    // add_ext(userCert, NID_subject_key_identifier, "keyid,issuer");
+    if (!X509_sign(userCert, rootKey, EVP_sha1())) { //CA私钥签名
+        exit(1);
+        return 0;
+    }
 
     *domainCert = userCert;
 
