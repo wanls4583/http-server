@@ -45,7 +45,7 @@ int Cert::add_ext(X509 *cert, int nid, char *value)
     return 1;
 }
 
-int Cert::mkreq(X509_REQ **csr, EVP_PKEY **privateKey, int serial, int days)
+int Cert::mkreq(X509_REQ **req, EVP_PKEY **pkey, int serial, int days)
 {
     X509_REQ *x;
     EVP_PKEY *pk;
@@ -83,28 +83,28 @@ int Cert::mkreq(X509_REQ **csr, EVP_PKEY **privateKey, int serial, int days)
     if (!X509_REQ_sign(x, pk, EVP_sha1())) {
         return 0;
     }
-    *csr = x;
-    *privateKey = pk;
+    *req = x;
+    *pkey = pk;
     return 1;
 }
 
-int Cert::createCertFromRequestFile(EVP_PKEY **privateKey, X509 **domainCert)
+int Cert::createCertFromRequestFile(EVP_PKEY **pkey, X509 **domainCert)
 {
     X509 * rootCert = PEM_read_bio_X509(rootCertIn, NULL, 0, NULL); //x509根证书对象
     EVP_PKEY * rootKey = PEM_read_bio_PrivateKey(rootKeyIn, NULL, 0, NULL); //根证书密钥对象
     
-    X509_REQ *csr = NULL;
-    int result = mkreq(&csr, privateKey, 0, 365);
+    X509_REQ *req = NULL;
+    int result = mkreq(&req, pkey, 0, 365);
     if (!result) {
         exit(1);
         return 0;
     }
-    // RSA_print_fp(stdout, EVP_PKEY_get1_RSA(*privateKey), 0);
-    // X509_REQ_print_fp(stdout, csr);
+    // RSA_print_fp(stdout, EVP_PKEY_get1_RSA(*pkey), 0);
+    // X509_REQ_print_fp(stdout, req);
 
     EVP_PKEY *userKey = NULL;
     X509 *userCert = NULL;
-    userKey = X509_REQ_get_pubkey(csr); //从请求文件中获取公钥
+    userKey = X509_REQ_get_pubkey(req); //从请求文件中获取公钥
     userCert = X509_new(); //x509对象 用于生成证书
 
     X509_set_version(userCert, 2);
@@ -114,7 +114,7 @@ int Cert::createCertFromRequestFile(EVP_PKEY **privateKey, X509 **domainCert)
     X509_set_pubkey(userCert, userKey); //将公钥载入至用户证书
     EVP_PKEY_free(userKey);
 
-    X509_set_subject_name(userCert, X509_REQ_get_subject_name(csr));
+    X509_set_subject_name(userCert, X509_REQ_get_subject_name(req));
     X509_set_issuer_name(userCert, X509_get_issuer_name(rootCert));
     add_ext(userCert, NID_subject_alt_name, "IP:127.0.0.1,DNS:my.test.com");
     // add_ext(userCert, NID_basic_constraints, "critical,CA:FALSE");
@@ -150,4 +150,51 @@ int Cert::createCertFromRequestFile(EVP_PKEY **privateKey, X509 **domainCert)
     //     ret = 0;
     // }
     // return ret;
+}
+
+int Cert::createCertFromRequestFileV2(EVP_PKEY **pkey, X509 **domainCert) {
+    X509 *x;
+    EVP_PKEY *pk;
+    X509_NAME *name = NULL;
+    X509 * rootCert = PEM_read_bio_X509(this->rootCertIn, NULL, 0, NULL); //x509根证书对象
+    EVP_PKEY * rootKey = PEM_read_bio_PrivateKey(this->rootKeyIn, NULL, 0, NULL); //根证书密钥对象
+
+    pk = EVP_PKEY_new();
+    x = X509_new();
+
+    if (!EVP_PKEY_assign_RSA(pk, this->rsa)) {
+        return 0;
+    }
+
+    X509_set_version(x, 2);
+    ASN1_INTEGER_set(X509_get_serialNumber(x), 1);
+    X509_gmtime_adj(X509_get_notBefore(x), 0);
+    X509_gmtime_adj(X509_get_notAfter(x), (long)60 * 60 * 24 * 365);
+    X509_set_pubkey(x, pk);
+
+    name = X509_get_subject_name(x);
+
+    unsigned char c[] = "CN";
+    unsigned char cn[] = "*.test.com";
+    unsigned char o[] = "Internet Widgits Pty Ltd";
+    unsigned char ou[] = "Internet Widgits Pty Ltd";
+    X509_NAME_add_entry_by_txt(name, "C", MBSTRING_ASC, c, -1, -1, 0);
+    X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, cn, -1, -1, 0);
+    X509_NAME_add_entry_by_txt(name, "O", MBSTRING_ASC, o, -1, -1, 0);
+    X509_NAME_add_entry_by_txt(name, "OU", MBSTRING_ASC, ou, -1, -1, 0);
+
+    X509_set_issuer_name(x, X509_get_issuer_name(rootCert));
+
+    add_ext(x, NID_subject_alt_name, "IP:127.0.0.1,DNS:*.test.com");
+    add_ext(x, NID_basic_constraints, "critical,CA:TRUE");
+    add_ext(x, NID_key_usage, "digitalSignature,nonRepudiation,keyEncipherment,dataEncipherment");
+
+    if (!X509_sign(x, rootKey, EVP_sha1())) {
+        return 0;
+    }
+
+    *pkey = pk;
+    *domainCert = x;
+
+    return 1;
 }

@@ -20,6 +20,7 @@ public:
     Cert();
     static void rsaCallback(int p, int n, void *arg);
     int add_ext(X509 *cert, int nid, char *value);
-    int mkreq(X509_REQ **req, EVP_PKEY **privateKey, int serial, int days);
-    int createCertFromRequestFile(EVP_PKEY **privateKey, X509 **domainCert);
+    int mkreq(X509_REQ **req, EVP_PKEY **pkey, int serial, int days);
+    int createCertFromRequestFile(EVP_PKEY **pkey, X509 **domainCert);
+    int createCertFromRequestFileV2(EVP_PKEY **pkey, X509 **domainCert);
 };

@@ -54,13 +54,13 @@ static int servSock;
 static SSL_CTX *ctx;
 static SockInfo sockInfos[MAX_SOCK];
 
-pthread_key_t pkey; 
+pthread_key_t ptKey; 
 
 int main()
 {
     initSockInfos();
     initializeSSL();
-    pthread_key_create(&pkey, NULL);
+    pthread_key_create(&ptKey, NULL);
     servSock = initServSock();
 
     while (1)
@@ -90,10 +90,10 @@ int main()
 
 void initializeSSL()
 {
-    EVP_PKEY *privateKey;
+    EVP_PKEY *pkey;
     X509 *domainCert;
     Cert cert;
-    cert.createCertFromRequestFile(&privateKey, &domainCert);
+    cert.createCertFromRequestFileV2(&pkey, &domainCert);
 
     SSL_load_error_strings();
     OpenSSL_add_ssl_algorithms();
@@ -118,7 +118,7 @@ void initializeSSL()
         ERR_print_errors_fp(stderr);
         exit(3);
     }
-    if (SSL_CTX_use_PrivateKey(ctx, privateKey) <= 0)
+    if (SSL_CTX_use_PrivateKey(ctx, pkey) <= 0)
     {
         ERR_print_errors_fp(stderr);
         exit(4);
@@ -157,7 +157,7 @@ void *initClntSock(void *arg)
     SockInfo sockInfo = *((SockInfo *)arg);
     int clntSock = sockInfo.clntSock;
 
-    pthread_setspecific(pkey, arg);
+    pthread_setspecific(ptKey, arg);
 
     ssl = sockInfo.ssl = checkSLL(clntSock);
 
@@ -252,7 +252,7 @@ void resetSockInfo(SockInfo &sockInfo) {
 
 void shutdownSock()
 {
-    SockInfo &sockInfo = *(SockInfo *)pthread_getspecific(pkey);
+    SockInfo &sockInfo = *(SockInfo *)pthread_getspecific(ptKey);
     if (sockInfo.ssl != NULL)
     {
         SSL_shutdown(sockInfo.ssl);
