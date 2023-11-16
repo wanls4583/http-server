@@ -93,7 +93,7 @@ void initializeSSL()
     EVP_PKEY *pkey;
     X509 *domainCert;
     Cert cert;
-    cert.createCertFromRequestFileV2(&pkey, &domainCert);
+    cert.createCertFromRequestFile(&pkey, &domainCert);
 
     SSL_load_error_strings();
     OpenSSL_add_ssl_algorithms();
