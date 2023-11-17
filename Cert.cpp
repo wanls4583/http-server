@@ -68,7 +68,7 @@ int Cert::createCertFromRequestFile(EVP_PKEY **pkey, X509 **domainCert) {
     name = X509_get_subject_name(x);
 
     unsigned char c[] = "CN";
-    unsigned char cn[] = "my.test.com";
+    unsigned char cn[] = "*.test.com";
     unsigned char o[] = "Internet Widgits Pty Ltd";
     unsigned char ou[] = "Internet Widgits Pty Ltd";
     X509_NAME_add_entry_by_txt(name, "C", MBSTRING_ASC, c, -1, -1, 0);
@@ -78,7 +78,7 @@ int Cert::createCertFromRequestFile(EVP_PKEY **pkey, X509 **domainCert) {
 
     X509_set_issuer_name(x, X509_get_issuer_name(rootCert));
 
-    add_ext(x, NID_subject_alt_name, "IP:127.0.0.1,DNS:my.test.com"); //DNS必须，否则浏览器校验会失败
+    add_ext(x, NID_subject_alt_name, "IP:127.0.0.1,DNS:*.test.com"); //DNS必须，否则浏览器校验会失败
     add_ext(x, NID_basic_constraints, "critical,CA:FALSE"); //critical代表关键，默认是非关键，其他扩展也是
     add_ext(x, NID_key_usage, "digitalSignature,nonRepudiation,keyEncipherment,dataEncipherment");
 
