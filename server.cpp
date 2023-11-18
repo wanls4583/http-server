@@ -53,7 +53,7 @@ static int servSock;
 static SockInfo sockInfos[MAX_SOCK];
 static TlsUtils tlsUtil;
 
-pthread_key_t ptKey; 
+pthread_key_t ptKey;
 
 int main()
 {
@@ -75,7 +75,6 @@ int main()
                 break;
             }
         }
-        cout << "clntSock:" << clntSock << ";i:" << i << endl;
         pthread_t tid;
         pthread_create(&tid, NULL, initClntSock, &sockInfos[i]);
         pthread_detach(tid);
@@ -85,7 +84,6 @@ int main()
 
     return 0;
 }
-
 
 int initServSock()
 {
@@ -117,9 +115,6 @@ void *initClntSock(void *arg)
     pthread_setspecific(ptKey, arg);
 
     ssl = sockInfo.ssl = checkSLL(clntSock);
-
-    // cout<<"ssl:"<<(ssl!=NULL)<<endl;
-
     err = readData(clntSock, ssl, buf, sizeof(buf));
 
     string fName = findFileName(buf);
@@ -195,14 +190,16 @@ int writeData(int clntSock, SSL *ssl, char *buf, int length)
     return err;
 }
 
-void initSockInfos() {
+void initSockInfos()
+{
     for (int i = 0; i < MAX_SOCK; i++)
     {
         resetSockInfo(sockInfos[i]);
     }
 }
 
-void resetSockInfo(SockInfo &sockInfo) {
+void resetSockInfo(SockInfo &sockInfo)
+{
     sockInfo.clntSock = -1;
     sockInfo.ssl = NULL;
 }
@@ -223,46 +220,25 @@ SSL *checkSLL(int clntSock)
 {
     char buf[2];
     SSL *ssl = NULL;
-    if (tlsUtil.isClntHello(clntSock))
+    SSL_CTX *ctx = NULL;
+    if (!tlsUtil.isClntHello(clntSock))
     {
-        SSL_CTX *ctx = tlsUtil.getCert(clntSock);
-        X509 *client_cert;
-        int err;
-        char *str;
-        ssl = SSL_new(ctx);
-        CHK_NULL(ssl);
-        SSL_set_fd(ssl, clntSock);
-        err = SSL_accept(ssl);
-        CHK_SSL(err);
-
-        // printf("SSL connection using %s\n", SSL_get_cipher(ssl));
-
-        client_cert = SSL_get_peer_certificate(ssl);
-
-        if (client_cert != NULL)
-        {
-            printf("Client certificate:\n");
-
-            str = X509_NAME_oneline(X509_get_subject_name(client_cert), 0, 0);
-            CHK_NULL(str);
-            printf("\t subject: %s\n", str);
-            OPENSSL_free(str);
-
-            str = X509_NAME_oneline(X509_get_issuer_name(client_cert), 0, 0);
-            CHK_NULL(str);
-            printf("\t issuer: %s\n", str);
-            OPENSSL_free(str);
-
-            /* We could do all sorts of certificate verification stuff here before
-            deallocating the certificate. */
-
-            X509_free(client_cert);
-        }
-        else
-        {
-            // printf("Client does not have certificate.\n");
-        }
+        return NULL;
     }
+    ctx = tlsUtil.getCert(clntSock);
+    if (!ctx)
+    {
+        return NULL;
+    }
+    X509 *client_cert;
+    int err;
+    char *str;
+    ssl = SSL_new(ctx);
+    CHK_NULL(ssl);
+    SSL_set_fd(ssl, clntSock);
+    err = SSL_accept(ssl);
+    CHK_SSL(err);
+    // printf("SSL connection using %s\n", SSL_get_cipher(ssl)); // TLS_AES_128_GCM_SHA256
     return ssl;
 }
 
