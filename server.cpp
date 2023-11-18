@@ -8,7 +8,7 @@
 #include <openssl/err.h>
 #include <openssl/bio.h>
 #include <pthread.h>
-#include "Cert.h"
+#include "TlsUtils.h"
 
 using namespace std;
 
@@ -34,7 +34,6 @@ struct SockInfo
     int clntSock;
 };
 
-void initializeSSL();
 int initServSock();
 void *initClntSock(void *arg);
 void shutdownSock();
@@ -51,15 +50,14 @@ string getType(string fName);
 const int port = 8000;
 const int MAX_SOCK = 100;
 static int servSock;
-static SSL_CTX *ctx;
 static SockInfo sockInfos[MAX_SOCK];
+static TlsUtils tlsUtil;
 
 pthread_key_t ptKey; 
 
 int main()
 {
     initSockInfos();
-    initializeSSL();
     pthread_key_create(&ptKey, NULL);
     servSock = initServSock();
 
@@ -88,47 +86,6 @@ int main()
     return 0;
 }
 
-void initializeSSL()
-{
-    EVP_PKEY *pkey;
-    X509 *domainCert;
-    Cert cert;
-    cert.createCertFromRequestFile(&pkey, &domainCert);
-
-    SSL_load_error_strings();
-    OpenSSL_add_ssl_algorithms();
-    ctx = SSL_CTX_new(TLS_server_method());
-    if (!ctx)
-    {
-        ERR_print_errors_fp(stderr);
-        exit(2);
-    }
-    // if (SSL_CTX_use_certificate_file(ctx, "rootCA/server.crt", SSL_FILETYPE_PEM) <= 0)
-    // {
-    //     ERR_print_errors_fp(stderr);
-    //     exit(3);
-    // }
-    // if (SSL_CTX_use_PrivateKey_file(ctx, "rootCA/server.key", SSL_FILETYPE_PEM) <= 0)
-    // {
-    //     ERR_print_errors_fp(stderr);
-    //     exit(4);
-    // }
-    if (SSL_CTX_use_certificate(ctx, domainCert) <= 0)
-    {
-        ERR_print_errors_fp(stderr);
-        exit(3);
-    }
-    if (SSL_CTX_use_PrivateKey(ctx, pkey) <= 0)
-    {
-        ERR_print_errors_fp(stderr);
-        exit(4);
-    }
-    if (!SSL_CTX_check_private_key(ctx))
-    {
-        fprintf(stderr, "Private key does not match the certificate public key\n");
-        exit(5);
-    }
-}
 
 int initServSock()
 {
@@ -266,12 +223,9 @@ SSL *checkSLL(int clntSock)
 {
     char buf[2];
     SSL *ssl = NULL;
-    memset(buf, 0, sizeof(buf));
-    recv(clntSock, buf, 2, MSG_PEEK);
-    // recv(clntSock, buf, 2, MSG_PEEK|MSG_DONTWAIT);
-    // cout<<"checkSLL:"<<buf[0]<<buf[1]<<endl;
-    if (buf[0] == 0x16 && buf[1] == 0x03)
+    if (tlsUtil.isClntHello(clntSock))
     {
+        SSL_CTX *ctx = tlsUtil.getCert(clntSock);
         X509 *client_cert;
         int err;
         char *str;

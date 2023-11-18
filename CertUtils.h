@@ -1,4 +1,6 @@
-#include <stdlib.h>
+#ifndef CERT_UTILS
+#define CERT_UTILS
+
 #include <iostream>
 #include <openssl/pem.h>
 #include <openssl/conf.h>
@@ -10,15 +12,16 @@
 #define FORMAT_NET 4
 #define FORMAT_P12 5
 
-class Cert
+class CertUtils
 {
 private:
     RSA *rsa;
-    BIO *rootCertIn;
-    BIO *rootKeyIn;
+    X509 * rootCert;
+    EVP_PKEY * rootKey;
 public:
-    Cert();
+    CertUtils();
     static void rsaCallback(int p, int n, void *arg);
     int add_ext(X509 *cert, int nid, char *value);
-    int createCertFromRequestFile(EVP_PKEY **pkey, X509 **domainCert);
+    int createCertFromRequestFile(EVP_PKEY **pkey, X509 **domainCert, char *serverName);
 };
+#endif

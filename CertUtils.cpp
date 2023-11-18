@@ -1,15 +1,19 @@
-#include "Cert.h"
+#include "CertUtils.h"
 
 using namespace std;
 
-Cert::Cert()
+CertUtils::CertUtils()
 {
     rsa = RSA_generate_key(1024, RSA_F4, rsaCallback, NULL);
-    rootCertIn = BIO_new_file("/Users/lisong/github/http-server/rootCA/rootCA.crt", "r");
-    rootKeyIn = BIO_new_file("/Users/lisong/github/http-server/rootCA/rootCA.key.pem", "r");
+    BIO *rootCertIn = BIO_new_file("/Users/lisong/github/http-server/rootCA/rootCA.crt", "r");
+    BIO *rootKeyIn = BIO_new_file("/Users/lisong/github/http-server/rootCA/rootCA.key.pem", "r");
+    this->rootCert = PEM_read_bio_X509(rootCertIn, NULL, 0, NULL); //x509根证书对象
+    this->rootKey = PEM_read_bio_PrivateKey(rootKeyIn, NULL, 0, NULL); //根证书密钥对象
+    BIO_free(rootCertIn);
+    BIO_free(rootKeyIn);
 };
 
-void Cert::rsaCallback(int p, int n, void *arg)
+void CertUtils::rsaCallback(int p, int n, void *arg)
 {
     char c = 'B';
 
@@ -24,7 +28,7 @@ void Cert::rsaCallback(int p, int n, void *arg)
     fputc(c, stderr);
 };
 
-int Cert::add_ext(X509 *cert, int nid, char *value)
+int CertUtils::add_ext(X509 *cert, int nid, char *value)
 {
     X509_EXTENSION *ex;
     X509V3_CTX ctx;
@@ -45,12 +49,10 @@ int Cert::add_ext(X509 *cert, int nid, char *value)
     return 1;
 }
 
-int Cert::createCertFromRequestFile(EVP_PKEY **pkey, X509 **domainCert) {
+int CertUtils::createCertFromRequestFile(EVP_PKEY **pkey, X509 **domainCert, char *serverName) {
     X509 *x;
     EVP_PKEY *pk;
     X509_NAME *name = NULL;
-    X509 * rootCert = PEM_read_bio_X509(this->rootCertIn, NULL, 0, NULL); //x509根证书对象
-    EVP_PKEY * rootKey = PEM_read_bio_PrivateKey(this->rootKeyIn, NULL, 0, NULL); //根证书密钥对象
 
     pk = EVP_PKEY_new();
     x = X509_new();
@@ -68,17 +70,22 @@ int Cert::createCertFromRequestFile(EVP_PKEY **pkey, X509 **domainCert) {
     name = X509_get_subject_name(x);
 
     unsigned char c[] = "CN";
-    unsigned char cn[] = "*.test.com";
     unsigned char o[] = "Internet Widgits Pty Ltd";
     unsigned char ou[] = "Internet Widgits Pty Ltd";
+
     X509_NAME_add_entry_by_txt(name, "C", MBSTRING_ASC, c, -1, -1, 0);
-    X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, cn, -1, -1, 0);
+    X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, (unsigned char *)serverName, -1, -1, 0);
     X509_NAME_add_entry_by_txt(name, "O", MBSTRING_ASC, o, -1, -1, 0);
     X509_NAME_add_entry_by_txt(name, "OU", MBSTRING_ASC, ou, -1, -1, 0);
 
     X509_set_issuer_name(x, X509_get_issuer_name(rootCert));
 
-    add_ext(x, NID_subject_alt_name, "IP:127.0.0.1,DNS:*.test.com"); //DNS必须，否则浏览器校验会失败
+    char altName[100];
+    memset(altName, 0, 100);
+    strcat(altName, "IP:127.0.0.1,DNS:");
+    strcat(altName, serverName);
+
+    add_ext(x, NID_subject_alt_name, altName); //DNS必须，否则浏览器校验会失败
     add_ext(x, NID_basic_constraints, "critical,CA:FALSE"); //critical代表关键，默认是非关键，其他扩展也是
     add_ext(x, NID_key_usage, "digitalSignature,nonRepudiation,keyEncipherment,dataEncipherment");
 
