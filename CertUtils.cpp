@@ -1,5 +1,8 @@
 #include "CertUtils.h"
 
+#define pemFilePath "rootCA/rootCA.crt"
+#define keyFilePath "rootCA/rootCA.key"
+
 using namespace std;
 
 CertUtils::CertUtils() : rsa(NULL), rootCert(NULL), rootKey(NULL)
@@ -23,8 +26,8 @@ CertUtils::CertUtils() : rsa(NULL), rootCert(NULL), rootKey(NULL)
     // 生成RSA密钥对-end
 
     // 加载根证书-begin
-    BIO *rootCertIn = BIO_new_file("rootCA/rootCA.crt", "r");
-    BIO *rootKeyIn = BIO_new_file("rootCA/rootCA.key.pem", "r");
+    BIO *rootCertIn = BIO_new_file(pemFilePath, "r");
+    BIO *rootKeyIn = BIO_new_file(keyFilePath, "r");
     this->rootCert = PEM_read_bio_X509(rootCertIn, NULL, 0, NULL);     // x509根证书对象
     this->rootKey = PEM_read_bio_PrivateKey(rootKeyIn, NULL, 0, NULL); // 根证书密钥对象
     if (!this->rootCert)
