@@ -39,6 +39,8 @@ typedef struct HttpHeader
 {
     char *hostname;
     char *protocol;
+    char *path;
+    char *url;
     char *method;
     char *connnection;
     char *proxyConnection;
@@ -56,11 +58,13 @@ void shutdownSock();
 void initSockInfos();
 void resetSockInfo(SockInfo &sockInfo);
 SSL *checkSLL(int clntSock);
-int readData(int clntSock, SSL *ssl, char *buf, int length);
-int writeData(int clntSock, SSL *ssl, char *buf, int length);
-int notFound(int clntSock, SSL *ssl);
+int readData(SockInfo &sockInfo, char *buf, int length);
+int writeData(SockInfo &sockInfo, char *buf, int length);
+int sendTunnelOk(SockInfo &sockInfo);
+int send404(SockInfo &sockInfo);
+void sendFile(SockInfo &sockInfo, char *buf);
+HttpHeader *getHttpHeader(SockInfo &sockInfo, string req);
 char *readFile(ifstream &inFile, int &len);
-HttpHeader *getHttpHeader(string req);
 string findFileName(string s);
 string getType(string fName);
 
@@ -135,81 +139,54 @@ void *initClntSock(void *arg)
     pthread_setspecific(ptKey, arg);
 
     ssl = sockInfo.ssl = checkSLL(clntSock);
-    err = readData(clntSock, ssl, buf, sizeof(buf));
+    err = readData(sockInfo, buf, sizeof(buf));
 
-    HttpHeader *header = getHttpHeader(buf);
+    HttpHeader *header = getHttpHeader(sockInfo, buf);
     if (!header || !header->hostname)
     {
-        shutdown(servSock, SHUT_RDWR);
+        shutdownSock();
         return NULL;
     }
-    string fName = findFileName(buf);
-    if (fName.length())
-    {
-        fName = "www" + fName;
-        ifstream inFile(fName.c_str(), ios::in | ios::binary);
-
-        if (inFile.good())
-        {
-            string head = "HTTP/1.1 200 OK\n";
-            string type = getType(fName);
-            int len = 0;
-            char *data = readFile(inFile, len);
-
-            head += "Content-Type: " + type + "\n";
-            head += "Connection: close\n";
-            head += "Content-Length: " + to_string(len) + "\n";
-            head += "\n";
-
-            // cout << fName << ":" << len << endl;
-
-            writeData(clntSock, ssl, const_cast<char *>(head.c_str()), head.length());
-            writeData(clntSock, ssl, data, len);
-
-            delete[] data;
-        }
-        else
-        {
-            // cout << "notFound:" << buf << endl;
-            notFound(clntSock, ssl);
-        }
+    if (strcmp(header->hostname, "my.test.com") != 0) {
+        shutdownSock();
+        return NULL;
     }
-    else
-    {
-        // cout << "empty:" << buf << endl;
-        notFound(clntSock, ssl);
+    if (strcmp(header->method, "CONNECT") == 0) {
+        sendTunnelOk(sockInfo);
+        initClntSock(&sockInfo);
+    } else if (strcmp(header->method, "GET") == 0 || strcmp(header->method, "POST") == 0) {
+        sendFile(sockInfo, buf);
+        shutdownSock();
     }
-
-    shutdownSock();
 
     return NULL;
 }
 
-int readData(int clntSock, SSL *ssl, char *buf, int length)
+int readData(SockInfo &sockInfo, char *buf, int length)
 {
     int err;
-    if (ssl == NULL)
+    if (sockInfo.ssl == NULL)
     {
-        read(clntSock, buf, length);
+        read(sockInfo.clntSock, buf, length);
     }
     else
     {
-        err = SSL_read(ssl, buf, length);
+        err = SSL_read(sockInfo.ssl, buf, length);
         CHK_SSL(err);
     }
     return err;
 }
 
-int writeData(int clntSock, SSL *ssl, char *buf, int length)
+int writeData(SockInfo &sockInfo, char *buf, int length)
 {
     int err;
-    if (ssl == NULL)
+    if (sockInfo.ssl == NULL)
     {
-        err = write(clntSock, buf, length);
+        err = write(sockInfo.clntSock, buf, length);
     }
     else
     {
-        err = SSL_write(ssl, buf, length);
+        err = SSL_write(sockInfo.ssl, buf, length);
         CHK_SSL(err);
     }
     return err;
@@ -267,20 +244,65 @@ SSL *checkSLL(int clntSock)
     return ssl;
 }
 
-int notFound(int clntSock, SSL *ssl)
+int send404(SockInfo &sockInfo)
 {
     int err;
     string s = "HTTP/1.1 404 Not Found\nConnection: close\n\n404 Not Found";
-    if (ssl == NULL)
+    if (sockInfo.ssl == NULL)
     {
-        err = write(clntSock, s.c_str(), s.length());
+        err = write(sockInfo.clntSock, s.c_str(), s.length());
     }
     else
     {
-        err = SSL_write(ssl, s.c_str(), s.length());
+        err = SSL_write(sockInfo.ssl, s.c_str(), s.length());
         CHK_SSL(err);
     }
     return err;
+}
+
+int sendTunnelOk(SockInfo &sockInfo) {
+    string s = "HTTP/1.1 200 Connection Established\r\n\r\n";;
+    return write(sockInfo.clntSock, s.c_str(), s.length());
+}
+
+void sendFile(SockInfo &sockInfo, char *buf)
+{
+    string fName = findFileName(buf);
+    if (fName.length())
+    {
+        fName = "www" + fName;
+        ifstream inFile(fName.c_str(), ios::in | ios::binary);
+
+        if (inFile.good())
+        {
+            string head = "HTTP/1.1 200 OK\n";
+            string type = getType(fName);
+            int len = 0;
+            char *data = readFile(inFile, len);
+
+            head += "Content-Type: " + type + "\n";
+            head += "Connection: close\n";
+            head += "Content-Length: " + to_string(len) + "\n";
+            head += "\n";
+
+            // cout << fName << ":" << len << endl;
+
+            writeData(sockInfo, const_cast<char *>(head.c_str()), head.length());
+            writeData(sockInfo, data, len);
+
+            delete[] data;
+        }
+        else
+        {
+            // cout << "send404:" << buf << endl;
+            send404(sockInfo);
+        }
+    }
+    else
+    {
+        // cout << "empty:" << buf << endl;
+        send404(sockInfo);
+    }
 }
 
 string getType(string fName)
@@ -329,46 +351,57 @@ string findFileName(string s)
     return s;
 }
 
-HttpHeader *getHttpHeader(string req)
+HttpHeader *getHttpHeader(SockInfo &sockInfo, string req)
 {
     HttpHeader *header = (HttpHeader *)calloc(1, sizeof(HttpHeader));
     string line = "", prop = "", val = "";
-    int pos = req.find("\r\n"), n = 0;
+    int pos = req.find("\r\n");
     if (pos != req.npos)
     {
         line = req.substr(0, pos);
-        n = line.find(' ');
-        if (n == req.npos)
+        int lSpace = line.find(' ');
+        int rSpace = line.rfind(' ');
+        if (lSpace == req.npos)
         {
             return NULL;
         }
-        val = line.substr(0, n);
+        val = line.substr(0, lSpace);
         header->method = new char[val.size() + 1];
         strcpy(header->method, val.c_str());
-        val = line.substr(line.rfind(' ') + 1);
+
+        val = line.substr(lSpace + 1, rSpace - lSpace - 1);
+        header->path = new char[val.size() + 1];
+        strcpy(header->path, val.c_str());
+
+        val = line.substr(rSpace + 1);
         header->protocol = new char[val.size() + 1];
         strcpy(header->protocol, val.c_str());
+
         req = req.substr(pos + 2);
     }
     while ((pos = req.find("\r\n")) != req.npos)
     {
         line = req.substr(0, pos);
         req = req.substr(pos + 2);
-        n = line.find(": ");
-        if (n == req.npos)
+        int colon = line.find(": ");
+        if (colon == req.npos)
         {
             break;
         }
-        prop = line.substr(0, n);
-        val = line.substr(n + 2);
-        // cout<<prop<<":"<<val<<endl;
+        prop = line.substr(0, colon);
+        val = line.substr(colon + 2);
         if (prop.compare("Host") == 0)
         {
-            n = val.find(':');
-            string host = val.substr(0, n);
-            header->hostname = new char[host.size()];
+            string host = val;
+            colon = val.find(':');
+            if (colon == val.npos) {
+                header->port = sockInfo.ssl ? 443 : 80;
+            } else {
+                header->port = atoi(val.substr(colon + 1).c_str());
+                host = val.substr(0, colon);
+            }
+            header->hostname = new char[host.size() + 1];
             strcpy(header->hostname, host.c_str());
-            header->port = atoi(val.substr(n + 1).c_str());
         }
         else if (prop.compare("Connection") == 0)
         {
@@ -404,6 +437,21 @@ HttpHeader *getHttpHeader(string req)
         {
             header->acceptLanguage = new char[val.size() + 1];
             strcpy(header->acceptLanguage, val.c_str());
+        }
+    }
+
+    if (header->path) {
+        string path = header->path;
+        if (path.find("http:") == 0 || path.find("https:") == 0) {
+            header->url = header->path;
+        } else if (header->path[0] == '/'){
+            string url = sockInfo.ssl ? "https://" : "http://";
+            url += header->hostname;
+            url += ":";
+            url += to_string(header->port);
+            url += header->path;
+            header->url = new char[url.size() + 1];
+            strcpy(header->url, url.c_str());
         }
     }
 
