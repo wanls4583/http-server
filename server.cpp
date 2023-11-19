@@ -32,7 +32,23 @@ struct SockInfo
 {
     SSL *ssl;
     int clntSock;
+    char *ip;
 };
+
+typedef struct HttpHeader
+{
+    char *hostname;
+    char *protocol;
+    char *method;
+    char *connnection;
+    char *proxyConnection;
+    char *userAgent;
+    char *accept;
+    char *referer;
+    char *acceptEncoding;
+    char *acceptLanguage;
+    int port;
+} HttpHeader;
 
 int initServSock();
 void *initClntSock(void *arg);
@@ -44,6 +60,7 @@ int readData(int clntSock, SSL *ssl, char *buf, int length);
 int writeData(int clntSock, SSL *ssl, char *buf, int length);
 int notFound(int clntSock, SSL *ssl);
 char *readFile(ifstream &inFile, int &len);
+HttpHeader *getHttpHeader(string req);
 string findFileName(string s);
 string getType(string fName);
 
@@ -52,6 +69,7 @@ const int MAX_SOCK = 100;
 static int servSock;
 static SockInfo sockInfos[MAX_SOCK];
 static TlsUtils tlsUtil;
+struct sockaddr_in servAddr;
 
 pthread_key_t ptKey;
 
@@ -67,11 +85,14 @@ int main()
         socklen_t clntAddrLen = sizeof(clntAddr);
         int clntSock = accept(servSock, (struct sockaddr *)&clntAddr, &clntAddrLen);
         int i = 0;
+        char *ip = inet_ntoa(servAddr.sin_addr);
         for (; i < 100; i++)
         {
             if (sockInfos[i].clntSock == -1)
             {
                 sockInfos[i].clntSock = clntSock;
+                sockInfos[i].ip = (char *)malloc(strlen(ip)); // inet_ntoa 获取到的地址永远是同一块地址
+                memcpy(sockInfos[i].ip, ip, strlen(ip));
                 break;
             }
         }
@@ -88,7 +109,6 @@ int main()
 int initServSock()
 {
     int servSock = socket(AF_INET, SOCK_STREAM, 0);
-    struct sockaddr_in servAddr;
 
     memset(&servAddr, 0, sizeof(servAddr));
 
@@ -117,8 +137,13 @@ void *initClntSock(void *arg)
     ssl = sockInfo.ssl = checkSLL(clntSock);
     err = readData(clntSock, ssl, buf, sizeof(buf));
 
+    HttpHeader *header = getHttpHeader(buf);
+    if (!header || !header->hostname)
+    {
+        shutdown(servSock, SHUT_RDWR);
+        return NULL;
+    }
     string fName = findFileName(buf);
-
     if (fName.length())
     {
         fName = "www" + fName;
@@ -136,7 +161,7 @@ void *initClntSock(void *arg)
             head += "Content-Length: " + to_string(len) + "\n";
             head += "\n";
 
-            cout << fName << ":" << len << endl;
+            // cout << fName << ":" << len << endl;
 
             writeData(clntSock, ssl, const_cast<char *>(head.c_str()), head.length());
             writeData(clntSock, ssl, data, len);
@@ -145,13 +170,13 @@ void *initClntSock(void *arg)
         }
         else
         {
-            cout << fName << endl;
+            // cout << "notFound:" << buf << endl;
             notFound(clntSock, ssl);
         }
     }
     else
     {
-        cout << "empty:" << buf << endl;
+        // cout << "empty:" << buf << endl;
         notFound(clntSock, ssl);
     }
 
@@ -302,4 +327,85 @@ string findFileName(string s)
     n1 = s.rfind(" ");
     s = s.substr(n + 1, n1 - n - 1);
     return s;
+}
+
+HttpHeader *getHttpHeader(string req)
+{
+    HttpHeader *header = (HttpHeader *)calloc(1, sizeof(HttpHeader));
+    string line = "", prop = "", val = "";
+    int pos = req.find("\r\n"), n = 0;
+    if (pos != req.npos)
+    {
+        line = req.substr(0, pos);
+        n = line.find(' ');
+        if (n == req.npos)
+        {
+            return NULL;
+        }
+        val = line.substr(0, n);
+        header->method = new char[val.size() + 1];
+        strcpy(header->method, val.c_str());
+        val = line.substr(line.rfind(' ') + 1);
+        header->protocol = new char[val.size() + 1];
+        strcpy(header->protocol, val.c_str());
+        req = req.substr(pos + 2);
+    }
+    while ((pos = req.find("\r\n")) != req.npos)
+    {
+        line = req.substr(0, pos);
+        req = req.substr(pos + 2);
+        n = line.find(": ");
+        if (n == req.npos)
+        {
+            break;
+        }
+        prop = line.substr(0, n);
+        val = line.substr(n + 2);
+        // cout<<prop<<":"<<val<<endl;
+        if (prop.compare("Host") == 0)
+        {
+            n = val.find(':');
+            string host = val.substr(0, n);
+            header->hostname = new char[host.size()];
+            strcpy(header->hostname, host.c_str());
+            header->port = atoi(val.substr(n + 1).c_str());
+        }
+        else if (prop.compare("Connection") == 0)
+        {
+            header->connnection = new char[val.size() + 1];
+            strcpy(header->connnection, val.c_str());
+        }
+        else if (prop.compare("Proxy-Connection") == 0)
+        {
+            header->proxyConnection = new char[val.size() + 1];
+            strcpy(header->proxyConnection, val.c_str());
+        }
+        else if (prop.compare("User-Agent") == 0)
+        {
+            header->userAgent = new char[val.size() + 1];
+            strcpy(header->userAgent, val.c_str());
+        }
+        else if (prop.compare("Accept") == 0)
+        {
+            header->accept = new char[val.size() + 1];
+            strcpy(header->accept, val.c_str());
+        }
+        else if (prop.compare("Referer") == 0)
+        {
+            header->referer = new char[val.size() + 1];
+            strcpy(header->referer, val.c_str());
+        }
+        else if (prop.compare("Accept-Encoding") == 0)
+        {
+            header->acceptEncoding = new char[val.size() + 1];
+            strcpy(header->acceptEncoding, val.c_str());
+        }
+        else if (prop.compare("Accept-Language") == 0)
+        {
+            header->acceptLanguage = new char[val.size() + 1];
+            strcpy(header->acceptLanguage, val.c_str());
+        }
+    }
+
+    return header;
 }

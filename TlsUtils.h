@@ -1,6 +1,7 @@
 #ifndef TLS_UTILS
 #define TLS_UTILS
 
+#include <pthread.h>
 #include "CertUtils.h"
 
 #define TLS_CONTENT_TYPE_LEN 1
@@ -31,6 +32,7 @@ private:
     ServerMap *ctxHead;
     ServerMap *ctxEnd;
     CertUtils certUtils;
+    pthread_mutex_t certMutex;
     int maxCtx;
     int ctxCount;
 

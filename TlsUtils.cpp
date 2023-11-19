@@ -7,7 +7,10 @@
 
 using namespace std;
 
-TlsUtils::TlsUtils() : ctxHead(NULL), ctxEnd(NULL), maxCtx(100), ctxCount(0){};
+
+TlsUtils::TlsUtils() : ctxHead(NULL), ctxEnd(NULL), maxCtx(100), ctxCount(0){
+    pthread_mutex_init(&certMutex, NULL);
+};
 
 unsigned int TlsUtils::bufToInt(char *buf, int size)
 {
@@ -33,7 +36,7 @@ int TlsUtils::isClntHello(int clntSock)
 
 char *TlsUtils::getServerName(int clntSock)
 {
-    char buf[5], *pos, *serveName, *end;
+    char buf[5], *pos, *serveName = NULL, *end;
     short tlsLen = 0;
     unsigned int sessionIdLen = 0, cipherSuitesLen = 0, compMethLen = 0, extType = 0, extLen = 0;
 
@@ -87,12 +90,17 @@ char *TlsUtils::getServerName(int clntSock)
 
 SSL_CTX *TlsUtils::getCert(int clntSock)
 {
+    pthread_mutex_lock(&certMutex);
     char *serverName = this->getServerName(clntSock);
+    if (!serverName) {
+        serverName = (char *)"127.0.0.1";
+    }
     ServerMap *head = this->ctxHead;
     while (head)
     {
-        if (strcmp(head->serveName, serverName) == 0)
+        if (serverName && strcmp(head->serveName, serverName) == 0)
         {
+            pthread_mutex_unlock(&certMutex);
             return head->ctx;
         }
         head = head->next;
@@ -101,6 +109,7 @@ SSL_CTX *TlsUtils::getCert(int clntSock)
 
     if (!ctx)
     {
+        pthread_mutex_unlock(&certMutex);
         return NULL;
     }
 
@@ -125,6 +134,7 @@ SSL_CTX *TlsUtils::getCert(int clntSock)
         this->ctxHead = head->next;
         free(head);
     }
+    pthread_mutex_unlock(&certMutex);
     return ctx;
 }
 

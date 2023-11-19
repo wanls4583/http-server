@@ -98,10 +98,19 @@ int CertUtils::createCertFromRequestFile(EVP_PKEY **pkey, X509 **domainCert, cha
 
     X509_set_issuer_name(x, X509_get_issuer_name(rootCert));
 
-    string altName = "IP:127.0.0.1,DNS:";
-    altName += serverName;
+    string altName = "";
+    if (serverName[0] == '1' || serverName[0] == '2')
+    { // ip地址
+        altName += "IP:";
+        altName += serverName;
+    }
+    else
+    {
+        altName += "DNS:";
+        altName += serverName;
+    }
 
-    add_ext(x, NID_subject_alt_name, (char *)altName.c_str());              // DNS必须，否则浏览器校验会失败
+    add_ext(x, NID_subject_alt_name, (char *)altName.c_str());      // DNS必须，否则浏览器校验会失败
     add_ext(x, NID_basic_constraints, (char *)"critical,CA:FALSE"); // critical代表关键，默认是非关键，其他扩展也是
     add_ext(x, NID_key_usage, (char *)"digitalSignature,nonRepudiation,keyEncipherment,dataEncipherment");
 
