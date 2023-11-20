@@ -66,13 +66,13 @@ int main()
         socklen_t clntAddrLen = sizeof(clntAddr);
         int clntSock = accept(servSock, (struct sockaddr *)&clntAddr, &clntAddrLen);
         int i = 0;
-        char *ip = inet_ntoa(servAddr.sin_addr);
+        char *ip = inet_ntoa(clntAddr.sin_addr);
         for (; i < 100; i++)
         {
             if (sockInfos[i].clntSock == -1)
             {
                 sockInfos[i].clntSock = clntSock;
-                sockInfos[i].ip = (char *)malloc(strlen(ip)); // inet_ntoa 获取到的地址永远是同一块地址
+                sockInfos[i].ip = (char *)calloc(1, strlen(ip) + 1); // inet_ntoa 获取到的地址永远是同一块地址
                 memcpy(sockInfos[i].ip, ip, strlen(ip));
                 break;
             }

@@ -94,6 +94,25 @@ HttpHeader *HttpClient::getHttpHeader(SockInfo *sockInfo)
             header->hostname = new char[host.size() + 1];
             strcpy(header->hostname, host.c_str());
         }
+        else if (prop.compare("Content-Type") == 0)
+        {
+            string type = val;
+            string boundary = " boundary=";
+            char **strs = NULL;
+            int len = split(strs, val, ';');
+            header->contentType = strs[0];
+            for (int i = 1; i < len; i++) {
+                string s = strs[i];
+                if (s.find(boundary) == 0) {
+                    header->boundary = new char[s.size() - boundary.size() + 1];
+                    strcpy(header->boundary, s.substr(boundary.size()).c_str());
+                }
+            }
+        }
+        else if (prop.compare("Content-Length") == 0)
+        {
+            header->contentLenth = atoi(val.c_str());
+        }
         else if (prop.compare("Connection") == 0)
         {
             header->connnection = new char[val.size() + 1];

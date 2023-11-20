@@ -8,6 +8,8 @@ typedef struct HttpHeader
     char *path;
     char *url;
     char *method;
+    char *contentType;
+    char *boundary;
     char *connnection;
     char *proxyConnection;
     char *userAgent;
@@ -15,6 +17,7 @@ typedef struct HttpHeader
     char *referer;
     char *acceptEncoding;
     char *acceptLanguage;
+    int contentLenth;
     int port;
 } HttpHeader;
 #endif

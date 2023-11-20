@@ -1,5 +1,6 @@
 #include <iostream>
 #include "HttpHeader.h"
+#include "utils.h"
 
 using namespace std;
 
