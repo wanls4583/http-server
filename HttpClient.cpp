@@ -10,7 +10,21 @@ HttpClient::~HttpClient()
 
 char *HttpClient::createReqData()
 {
-    return NULL;
+    string req = this->header->sockInfo->req;
+    string firstLine = "";
+    char *str = NULL;
+    int pos = req.find("\r\n");
+
+    firstLine += this->header->method;
+    firstLine += " ";
+    firstLine += this->header->path;
+    firstLine += " ";
+    firstLine += this->header->protocol;
+
+    req = firstLine + req.substr(pos);
+    str = (char *)calloc(1, req.size());
+
+    return str;
 }
 
 int HttpClient::sendReqData(char *req)
@@ -120,9 +134,15 @@ HttpHeader *HttpClient::getHttpHeader(SockInfo *sockInfo)
     if (header->path)
     {
         string path = header->path;
-        if (path.find("http:") == 0 || path.find("https:") == 0)
+        pos = path.find("://");
+        if (pos != path.npos)
         {
             header->url = header->path;
+            path = path.substr(pos + 3);
+            pos = path.find('/');
+            path = path.substr(pos);
+            header->path = (char *)calloc(1, path.size() + 1);
+            stpcpy(header->path, path.c_str());
         }
         else if (header->path[0] == '/')
         {
