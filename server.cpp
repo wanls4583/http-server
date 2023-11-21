@@ -236,16 +236,19 @@ int reciveReqData(SockInfo &sockInfo)
         return bufSize;
     }
 
-    // sockInfo.buf = (char *)realloc(sockInfo.buf, sockInfo.bufSize + bufSize);
+    // sockInfo.buf = (char *)realloc(sockInfo.buf, sockInfo.bufSize + bufSize + 1);
     // memcpy(sockInfo.buf + sockInfo.bufSize, buf, bufSize);
+    // sockInfo.buf[sockInfo.bufSize] = '\0';
 
-    string s = sockInfo.bufSize ? sockInfo.buf : "";
-    s += buf;
-    sockInfo.buf = (char *)calloc(1, sockInfo.bufSize + bufSize + 1);
-    strcpy(sockInfo.buf, s.c_str());
-
+    char *newBuf = (char *)calloc(1, sockInfo.bufSize + bufSize + 1);
+    if (sockInfo.bufSize) {
+        memcpy(newBuf, sockInfo.buf, sockInfo.bufSize);
+        memcpy(newBuf + sockInfo.bufSize, buf, bufSize);
+    } else {
+        memcpy(newBuf, buf, bufSize);
+    }
     sockInfo.bufSize += bufSize;
-    sockInfo.buf[sockInfo.bufSize] = '\0';
+    sockInfo.buf = newBuf;
 
     return bufSize;
 }
