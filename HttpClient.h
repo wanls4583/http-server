@@ -1,5 +1,5 @@
 #include <iostream>
-#include "HttpHeader.h"
+#include "SockInfo.h"
 #include "utils.h"
 
 using namespace std;
@@ -7,12 +7,10 @@ using namespace std;
 class HttpClient
 {
 private:
-    HttpHeader *header;
-
 public:
     HttpClient();
     ~HttpClient();
     HttpHeader *getHttpHeader(SockInfo *sockInfo);
-    char *createReqData();
-    int sendReqData(char *req);
+    char *createReqData(SockInfo *sockInfo);
+    int sendReqData(SockInfo *sockInfo);
 };

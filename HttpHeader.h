@@ -1,8 +1,6 @@
 #ifndef HttpHeader
-#include "SockInfo.h"
 typedef struct HttpHeader
 {
-    SockInfo *sockInfo;
     char *hostname;
     char *protocol;
     char *path;

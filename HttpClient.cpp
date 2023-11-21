@@ -1,6 +1,6 @@
 #include "HttpClient.h"
 
-HttpClient::HttpClient() : header(NULL)
+HttpClient::HttpClient()
 {
 }
 
@@ -8,18 +8,19 @@ HttpClient::~HttpClient()
 {
 }
 
-char *HttpClient::createReqData()
+char *HttpClient::createReqData(SockInfo *sockInfo)
 {
-    string req = this->header->sockInfo->req;
     string firstLine = "";
+    string req = sockInfo->req;
+    HttpHeader *header = sockInfo->header;
     char *str = NULL;
     int pos = req.find("\r\n");
 
-    firstLine += this->header->method;
+    firstLine += header->method;
     firstLine += " ";
-    firstLine += this->header->path;
+    firstLine += header->path;
     firstLine += " ";
-    firstLine += this->header->protocol;
+    firstLine += header->protocol;
 
     req = firstLine + req.substr(pos);
     str = (char *)calloc(1, req.size());
@@ -27,22 +28,16 @@ char *HttpClient::createReqData()
     return str;
 }
 
-int HttpClient::sendReqData(char *req)
+int HttpClient::sendReqData(SockInfo *sockInfo)
 {
     return 0;
 }
 
 HttpHeader *HttpClient::getHttpHeader(SockInfo *sockInfo)
 {
-    if (this->header)
-    {
-        return this->header;
-    }
     HttpHeader *header = (HttpHeader *)calloc(1, sizeof(HttpHeader));
     string line = "", prop = "", val = "", req = sockInfo->req;
     int pos = req.find("\r\n");
-
-    header->sockInfo = sockInfo;
 
     if (pos != req.npos)
     {
@@ -101,9 +96,11 @@ HttpHeader *HttpClient::getHttpHeader(SockInfo *sockInfo)
             char **strs = NULL;
             int len = split(strs, val, ';');
             header->contentType = strs[0];
-            for (int i = 1; i < len; i++) {
+            for (int i = 1; i < len; i++)
+            {
                 string s = strs[i];
-                if (s.find(boundary) == 0) {
+                if (s.find(boundary) == 0)
+                {
                     header->boundary = new char[s.size() - boundary.size() + 1];
                     strcpy(header->boundary, s.substr(boundary.size()).c_str());
                 }
@@ -174,8 +171,6 @@ HttpHeader *HttpClient::getHttpHeader(SockInfo *sockInfo)
             strcpy(header->url, url.c_str());
         }
     }
-
-    this->header = header;
 
     return header;
 }

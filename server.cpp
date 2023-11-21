@@ -35,11 +35,12 @@ void shutdownSock();
 void initSockInfos();
 void resetSockInfo(SockInfo &sockInfo);
 SSL *checkSLL(int clntSock);
+int reciveReqData(SockInfo &sockInfo);
 int readData(SockInfo &sockInfo, char *buf, int length);
 int writeData(SockInfo &sockInfo, char *buf, int length);
 int sendTunnelOk(SockInfo &sockInfo);
 int send404(SockInfo &sockInfo);
-void sendFile(SockInfo &sockInfo, char *buf);
+void sendFile(SockInfo &sockInfo);
 HttpHeader *getHttpHeader(SockInfo &sockInfo, string req);
 char *readFile(ifstream &inFile, int &len);
 string findFileName(string s);
@@ -108,19 +109,82 @@ int initServSock()
 void *initClntSock(void *arg)
 {
     SSL *ssl;
-    int length;
-    char buf[10240];
+    int err;
     SockInfo sockInfo = *((SockInfo *)arg);
+    HttpHeader *header = NULL;
+    HttpClient httpClient;
     int clntSock = sockInfo.clntSock;
 
     pthread_setspecific(ptKey, arg);
 
     ssl = sockInfo.ssl = checkSLL(clntSock);
-    length = readData(sockInfo, buf, sizeof(buf));
-    sockInfo.req = (char *)calloc(1, length + 1);
-    strcpy(sockInfo.req, buf);
 
-    HttpHeader *header = HttpClient().getHttpHeader(&sockInfo);
+    while ((err = reciveReqData(sockInfo)) > 0 && !sockInfo.header)
+    {
+        string s = sockInfo.buf;
+        int pos = s.find("\r\n\r\n");
+        if (pos != s.npos)
+        {
+            sockInfo.reqSize = pos + 4;
+            sockInfo.req = (char *)calloc(1, sockInfo.reqSize + 1);
+            strcpy(sockInfo.req, s.substr(0, sockInfo.reqSize).c_str());
+            header = httpClient.getHttpHeader(&sockInfo);
+            sockInfo.header = header;
+
+            sockInfo.bufSize -= sockInfo.reqSize;
+            sockInfo.buf = (char *)calloc(1, sockInfo.bufSize + 1);
+            strcpy(sockInfo.buf, s.substr(sockInfo.reqSize).c_str());
+            break;
+        }
+    }
+
+    if (err < 0)
+    {
+        shutdownSock();
+        pthread_exit(NULL);
+        return NULL;
+    }
+
+    while (err > 0)
+    {
+        string s = sockInfo.buf;
+        if (header->boundary)
+        {
+            int pos = s.find(header->boundary);
+            if (pos != s.npos)
+            {
+                sockInfo.bodySize = pos + strlen(header->boundary);
+                sockInfo.body = (char *)calloc(1, sockInfo.bodySize + 1);
+                strcpy(sockInfo.body, s.substr(0, sockInfo.bodySize).c_str());
+                break;
+            }
+        }
+        else if (header->contentLenth == 0)
+        {
+            break;
+        }
+        else if (header->contentLenth <= sockInfo.bufSize)
+        {
+            sockInfo.bodySize = header->contentLenth;
+            sockInfo.body = (char *)calloc(1, sockInfo.bodySize + 1);
+            strcpy(sockInfo.body, s.substr(0, sockInfo.bodySize).c_str());
+
+            sockInfo.bufSize -= sockInfo.bodySize;
+            sockInfo.buf = (char *)calloc(1, sockInfo.bufSize + 1);
+            strcpy(sockInfo.buf, s.substr(sockInfo.bodySize).c_str());
+            break;
+        }
+
+        err = reciveReqData(sockInfo);
+    }
+
+    if (err < 0)
+    {
+        shutdownSock();
+        pthread_exit(NULL);
+        return NULL;
+    }
+
     if (!header || !header->hostname)
     {
         shutdownSock();
@@ -138,11 +202,27 @@ void *initClntSock(void *arg)
     }
     else if (strcmp(header->method, "GET") == 0 || strcmp(header->method, "POST") == 0)
     {
-        sendFile(sockInfo, buf);
+        sendFile(sockInfo);
         shutdownSock();
     }
 
     return NULL;
+}
+
+int reciveReqData(SockInfo &sockInfo)
+{
+    char buf[1024];
+    int bufSize = readData(sockInfo, buf, sizeof(buf));
+    if (bufSize <= 0)
+    {
+        return bufSize;
+    }
+    sockInfo.bufSize += bufSize;
+    sockInfo.buf = (char *)realloc(sockInfo.buf, sockInfo.bufSize + 1);
+    memcpy(sockInfo.buf + bufSize, buf, bufSize);
+    sockInfo.buf[sockInfo.bufSize] = '\0';
+
+    return bufSize;
 }
 
 int readData(SockInfo &sockInfo, char *buf, int length)
@@ -185,8 +265,17 @@ void initSockInfos()
 
 void resetSockInfo(SockInfo &sockInfo)
 {
-    sockInfo.clntSock = -1;
+    sockInfo.header = NULL;
     sockInfo.ssl = NULL;
+    sockInfo.clntSock = -1;
+    sockInfo.bufSize = 0;
+    sockInfo.reqSize = 0;
+    sockInfo.bodySize = 0;
+    sockInfo.bodyEndFlag = 0;
+    sockInfo.ip = NULL;
+    sockInfo.req = NULL;
+    sockInfo.body = NULL;
+    sockInfo.buf = NULL;
 }
 
 void shutdownSock()
@@ -249,9 +338,9 @@ int sendTunnelOk(SockInfo &sockInfo)
     return write(sockInfo.clntSock, s.c_str(), s.length());
 }
 
-void sendFile(SockInfo &sockInfo, char *buf)
+void sendFile(SockInfo &sockInfo)
 {
-    string fName = findFileName(buf);
+    string fName = findFileName(sockInfo.req);
     if (fName.length())
     {
         fName = "www" + fName;
