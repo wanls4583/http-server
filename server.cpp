@@ -132,8 +132,12 @@ void *initClntSock(void *arg)
             sockInfo.header = header;
 
             sockInfo.bufSize -= sockInfo.reqSize;
-            sockInfo.buf = (char *)calloc(1, sockInfo.bufSize + 1);
-            strcpy(sockInfo.buf, s.substr(sockInfo.reqSize).c_str());
+            if (sockInfo.bufSize) {
+                sockInfo.buf = (char *)calloc(1, sockInfo.bufSize + 1);
+                strcpy(sockInfo.buf, s.substr(sockInfo.reqSize).c_str());
+            } else {
+                sockInfo.buf = (char *)"";
+            }
             break;
         }
     }
@@ -150,10 +154,14 @@ void *initClntSock(void *arg)
         string s = sockInfo.buf;
         if (header->boundary)
         {
-            int pos = s.find(header->boundary);
+            string boundary = "--";
+            boundary += header->boundary;
+            boundary += "--";
+            int pos = s.find(boundary);
             if (pos != s.npos)
             {
-                sockInfo.bodySize = pos + strlen(header->boundary);
+                sockInfo.bodySize = pos + boundary.size() + 2; //\r\n
+                sockInfo.bodySize = sockInfo.bodySize > sockInfo.bufSize ? sockInfo.bufSize : sockInfo.bodySize;
                 sockInfo.body = (char *)calloc(1, sockInfo.bodySize + 1);
                 strcpy(sockInfo.body, s.substr(0, sockInfo.bodySize).c_str());
                 break;
@@ -168,10 +176,6 @@ void *initClntSock(void *arg)
             sockInfo.bodySize = header->contentLenth;
             sockInfo.body = (char *)calloc(1, sockInfo.bodySize + 1);
             strcpy(sockInfo.body, s.substr(0, sockInfo.bodySize).c_str());
-
-            sockInfo.bufSize -= sockInfo.bodySize;
-            sockInfo.buf = (char *)calloc(1, sockInfo.bufSize + 1);
-            strcpy(sockInfo.buf, s.substr(sockInfo.bodySize).c_str());
             break;
         }
 
@@ -185,6 +189,17 @@ void *initClntSock(void *arg)
         return NULL;
     }
 
+    if (sockInfo.bodySize) {
+        sockInfo.bufSize -= sockInfo.bodySize;
+        if (sockInfo.bufSize) {
+            string s = sockInfo.buf;
+            sockInfo.buf = (char *)calloc(1, sockInfo.bufSize + 1);
+            strcpy(sockInfo.buf, s.substr(sockInfo.bodySize).c_str());
+        } else {
+            sockInfo.buf = (char *)"";
+        }
+    }
+
     if (!header || !header->hostname)
     {
         shutdownSock();
@@ -195,6 +210,7 @@ void *initClntSock(void *arg)
         shutdownSock();
         return NULL;
     }
+    
     if (strcmp(header->method, "CONNECT") == 0)
     {
         sendTunnelOk(sockInfo);
@@ -204,6 +220,7 @@ void *initClntSock(void *arg)
     {
         sendFile(sockInfo);
         shutdownSock();
+        pthread_exit(NULL);
     }
 
     return NULL;
@@ -213,13 +230,21 @@ int reciveReqData(SockInfo &sockInfo)
 {
     char buf[1024];
     int bufSize = readData(sockInfo, buf, sizeof(buf));
+
     if (bufSize <= 0)
     {
         return bufSize;
     }
+
+    // sockInfo.buf = (char *)realloc(sockInfo.buf, sockInfo.bufSize + bufSize);
+    // memcpy(sockInfo.buf + sockInfo.bufSize, buf, bufSize);
+
+    string s = sockInfo.bufSize ? sockInfo.buf : "";
+    s += buf;
+    sockInfo.buf = (char *)calloc(1, sockInfo.bufSize + bufSize + 1);
+    strcpy(sockInfo.buf, s.c_str());
+
     sockInfo.bufSize += bufSize;
-    sockInfo.buf = (char *)realloc(sockInfo.buf, sockInfo.bufSize + 1);
-    memcpy(sockInfo.buf + bufSize, buf, bufSize);
     sockInfo.buf[sockInfo.bufSize] = '\0';
 
     return bufSize;
