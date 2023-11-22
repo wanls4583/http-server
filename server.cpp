@@ -8,6 +8,7 @@
 #include <openssl/err.h>
 #include <openssl/bio.h>
 #include <pthread.h>
+#include "utils.h"
 #include "TlsUtils.h"
 #include "HttpClient.h"
 
@@ -121,21 +122,23 @@ void *initClntSock(void *arg)
 
     while ((err = reciveReqData(sockInfo)) > 0 && !sockInfo.header)
     {
-        string s = sockInfo.buf;
-        int pos = s.find("\r\n\r\n");
-        if (pos != s.npos)
+        int pos = kmpStrstr(sockInfo.buf, "\r\n\r\n", sockInfo.bufSize, 4);
+        if (pos != -1)
         {
             sockInfo.reqSize = pos + 4;
             sockInfo.req = (char *)calloc(1, sockInfo.reqSize + 1);
-            strcpy(sockInfo.req, s.substr(0, sockInfo.reqSize).c_str());
+            memcpy(sockInfo.req, sockInfo.buf, sockInfo.reqSize);
             header = httpClient.getHttpHeader(&sockInfo);
             sockInfo.header = header;
 
             sockInfo.bufSize -= sockInfo.reqSize;
             if (sockInfo.bufSize) {
-                sockInfo.buf = (char *)calloc(1, sockInfo.bufSize + 1);
-                strcpy(sockInfo.buf, s.substr(sockInfo.reqSize).c_str());
+                char *buf = (char *)calloc(1, sockInfo.bufSize + 1);
+                memcpy(buf, sockInfo.buf + sockInfo.reqSize, sockInfo.bufSize);
+                free(sockInfo.buf);
+                sockInfo.buf = buf;
             } else {
+                free(sockInfo.buf);
                 sockInfo.buf = (char *)"";
             }
             break;
@@ -151,19 +154,17 @@ void *initClntSock(void *arg)
 
     while (err > 0)
     {
-        string s = sockInfo.buf;
         if (header->boundary)
         {
             string boundary = "--";
             boundary += header->boundary;
-            boundary += "--";
-            int pos = s.find(boundary);
-            if (pos != s.npos)
+            boundary += "--\r\n";
+            int pos = kmpStrstr(sockInfo.buf, boundary.c_str(), sockInfo.bufSize, boundary.size());
+            if (pos != -1)
             {
-                sockInfo.bodySize = pos + boundary.size() + 2; //\r\n
-                sockInfo.bodySize = sockInfo.bodySize > sockInfo.bufSize ? sockInfo.bufSize : sockInfo.bodySize;
+                sockInfo.bodySize = pos + boundary.size();
                 sockInfo.body = (char *)calloc(1, sockInfo.bodySize + 1);
-                strcpy(sockInfo.body, s.substr(0, sockInfo.bodySize).c_str());
+                memcpy(sockInfo.body, sockInfo.buf, sockInfo.bodySize);
                 break;
             }
         }
@@ -175,7 +176,7 @@ void *initClntSock(void *arg)
         {
             sockInfo.bodySize = header->contentLenth;
             sockInfo.body = (char *)calloc(1, sockInfo.bodySize + 1);
-            strcpy(sockInfo.body, s.substr(0, sockInfo.bodySize).c_str());
+            memcpy(sockInfo.body, sockInfo.buf, sockInfo.bodySize);
             break;
         }
 
@@ -192,10 +193,12 @@ void *initClntSock(void *arg)
     if (sockInfo.bodySize) {
         sockInfo.bufSize -= sockInfo.bodySize;
         if (sockInfo.bufSize) {
-            string s = sockInfo.buf;
-            sockInfo.buf = (char *)calloc(1, sockInfo.bufSize + 1);
-            strcpy(sockInfo.buf, s.substr(sockInfo.bodySize).c_str());
+            char *buf = (char *)calloc(1, sockInfo.bufSize + 1);
+            memcpy(buf, sockInfo.buf + sockInfo.bodySize, sockInfo.bufSize);
+            free(sockInfo.buf);
+            sockInfo.buf = buf;
         } else {
+            free(sockInfo.buf);
             sockInfo.buf = (char *)"";
         }
     }
