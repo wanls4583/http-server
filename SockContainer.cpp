@@ -1,8 +1,20 @@
-#include "SockInfo.h"
+#include "SockContainer.h"
 
-void resetSockInfo(SockInfo &sockInfo)
+SockContainer::SockContainer() {
+    pthread_mutex_init(&sockContainerMutex, NULL);
+    this->initSockInfos();
+}
+
+SockContainer::~SockContainer()
 {
-    if (sockInfo.header) {
+    this->initSockInfos();
+}
+
+void SockContainer::resetSockInfo(SockInfo &sockInfo)
+{
+    pthread_mutex_lock(&sockContainerMutex);
+    if (sockInfo.header)
+    {
         free(sockInfo.header->hostname);
         free(sockInfo.header->protocol);
         free(sockInfo.header->path);
@@ -35,4 +47,26 @@ void resetSockInfo(SockInfo &sockInfo)
     sockInfo.bufSize = 0;
     sockInfo.reqSize = 0;
     sockInfo.bodySize = 0;
+    pthread_mutex_unlock(&sockContainerMutex);
+}
+
+void SockContainer::initSockInfos()
+{
+    for (int i = 0; i < MAX_SOCK; i++)
+    {
+        this->resetSockInfo(this->sockInfos[i]);
+    }
+}
+
+SockInfo *SockContainer::getSockInfo() {
+    pthread_mutex_lock(&sockContainerMutex);
+    for (int i = 0; i < MAX_SOCK; i++)
+    {
+        if (this->sockInfos[i].clntSock == -1) {
+            pthread_mutex_unlock(&sockContainerMutex);
+            return &this->sockInfos[i];
+        }
+    }
+    pthread_mutex_unlock(&sockContainerMutex);
+    return NULL;
 }

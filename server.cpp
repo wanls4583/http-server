@@ -33,7 +33,6 @@ using namespace std;
 int initServSock();
 void *initClntSock(void *arg);
 void shutdownSock();
-void initSockInfos();
 int reciveReqData(SockInfo &sockInfo);
 int readData(SockInfo &sockInfo, char *buf, int length);
 int writeData(SockInfo &sockInfo, char *buf, int length);
@@ -45,9 +44,8 @@ string findFileName(string s);
 string getType(string fName);
 
 const int port = 8000;
-const int MAX_SOCK = 100;
 static int servSock;
-static SockInfo sockInfos[MAX_SOCK];
+static SockContainer sockContainer;
 static TlsUtils tlsUtil;
 struct sockaddr_in servAddr;
 
@@ -55,7 +53,6 @@ pthread_key_t ptKey;
 
 int main()
 {
-    initSockInfos();
     pthread_key_create(&ptKey, NULL);
     servSock = initServSock();
 
@@ -66,19 +63,18 @@ int main()
         int clntSock = accept(servSock, (struct sockaddr *)&clntAddr, &clntAddrLen);
         int i = 0;
         char *ip = inet_ntoa(clntAddr.sin_addr);
-        for (; i < 100; i++)
-        {
-            if (sockInfos[i].clntSock == -1)
-            {
-                sockInfos[i].clntSock = clntSock;
-                sockInfos[i].ip = (char *)calloc(1, strlen(ip) + 1); // inet_ntoa 获取到的地址永远是同一块地址
-                memcpy(sockInfos[i].ip, ip, strlen(ip));
-                break;
-            }
+        SockInfo *sockInfo = sockContainer.getSockInfo();
+        if (sockInfo) {
+            (*sockInfo).clntSock = clntSock;
+            (*sockInfo).ip = (char *)calloc(1, strlen(ip) + 1); // inet_ntoa 获取到的地址永远是同一块地址
+            memcpy((*sockInfo).ip, ip, strlen(ip));
+
+            pthread_t tid;
+            pthread_create(&tid, NULL, initClntSock, sockInfo);
+            pthread_detach(tid);
+        } else {
+            close(clntSock);
         }
-        pthread_t tid;
-        pthread_create(&tid, NULL, initClntSock, &sockInfos[i]);
-        pthread_detach(tid);
     }
 
     shutdown(servSock, SHUT_RDWR);
@@ -136,7 +132,7 @@ void *initClntSock(void *arg)
                 sockInfo.buf = buf;
             } else {
                 free(sockInfo.buf);
-                sockInfo.buf = (char *)"";
+                sockInfo.buf = NULL;
             }
             break;
         }
@@ -196,7 +192,7 @@ void *initClntSock(void *arg)
             sockInfo.buf = buf;
         } else {
             free(sockInfo.buf);
-            sockInfo.buf = (char *)"";
+            sockInfo.buf = NULL;
         }
     }
 
@@ -231,24 +227,15 @@ int reciveReqData(SockInfo &sockInfo)
     char buf[1024];
     int bufSize = readData(sockInfo, buf, sizeof(buf));
 
-    if (bufSize <= 0)
+    if (bufSize <= 0 || sockInfo.clntSock == -1)
     {
-        return bufSize;
+        return -1;
     }
 
-    // sockInfo.buf = (char *)realloc(sockInfo.buf, sockInfo.bufSize + bufSize + 1);
-    // memcpy(sockInfo.buf + sockInfo.bufSize, buf, bufSize);
-    // sockInfo.buf[sockInfo.bufSize] = '\0';
-
-    char *newBuf = (char *)calloc(1, sockInfo.bufSize + bufSize + 1);
-    if (sockInfo.bufSize) {
-        memcpy(newBuf, sockInfo.buf, sockInfo.bufSize);
-        memcpy(newBuf + sockInfo.bufSize, buf, bufSize);
-    } else {
-        memcpy(newBuf, buf, bufSize);
-    }
+    sockInfo.buf = (char *)realloc(sockInfo.buf, sockInfo.bufSize + bufSize + 1);
+    memcpy(sockInfo.buf + sockInfo.bufSize, buf, bufSize);
     sockInfo.bufSize += bufSize;
-    sockInfo.buf = newBuf;
+    sockInfo.buf[sockInfo.bufSize] = '\0';
 
     return bufSize;
 }
@@ -283,14 +270,6 @@ int writeData(SockInfo &sockInfo, char *buf, int length)
     return err;
 }
 
-void initSockInfos()
-{
-    for (int i = 0; i < MAX_SOCK; i++)
-    {
-        resetSockInfo(sockInfos[i]);
-    }
-}
-
 void shutdownSock()
 {
     SockInfo &sockInfo = *(SockInfo *)pthread_getspecific(ptKey);
@@ -300,7 +279,7 @@ void shutdownSock()
         SSL_free(sockInfo.ssl);
     }
     close(sockInfo.clntSock);
-    resetSockInfo(sockInfo);
+    sockContainer.resetSockInfo(sockInfo);
 }
 
 int send404(SockInfo &sockInfo)

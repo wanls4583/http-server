@@ -8,7 +8,7 @@ int split(char **&strs, const string &s, const char delim = ' ')
 
     while (getline(iss, temp, delim))
     {
-        sv.emplace_back(std::move(temp));
+        sv.emplace_back(temp);
     }
 
     int size = sv.size();
@@ -31,7 +31,7 @@ int split(char **&strs, const string &s, const char delim = ' ')
 
 int *getLink(const char *p, size_t pSize)
 {
-    int *link = (int *)calloc(1, pSize);
+    int *link = new int[pSize]();
     link[0] = -1;
     link[1] = 0;
     // cout << "-1,0";
@@ -82,7 +82,7 @@ int kmpStrstr(const char *s, const char *p, size_t sSize, size_t pSize)
     {
         return i - j;
     }
-    free(link);
+    delete []link;
 
     return -1;
 }
