@@ -12,20 +12,12 @@
 #include "TlsUtils.h"
 #include "HttpClient.h"
 
-#define CHK_NULL(x)                 \
-    if ((x) == NULL)                \
-    {                               \
-        cout << "CHK_NULL" << endl; \
-        shutdownSock();             \
-        pthread_exit(NULL);         \
-    }
-#define CHK_SSL(err)                 \
+#define CHK_ERR(err)                 \
     if ((err) == -1)                 \
     {                                \
         ERR_print_errors_fp(stderr); \
-        cout << "CHK_SSL" << endl;   \
+        cout << "CHK_ERR" << endl;   \
         shutdownSock();              \
-        pthread_exit(NULL);          \
     }
 
 using namespace std;
@@ -33,13 +25,13 @@ using namespace std;
 int initServSock();
 void *initClntSock(void *arg);
 void shutdownSock();
-int reciveReqData(SockInfo &sockInfo);
-int readData(SockInfo &sockInfo, char *buf, int length);
-int writeData(SockInfo &sockInfo, char *buf, int length);
-int sendTunnelOk(SockInfo &sockInfo);
-int send404(SockInfo &sockInfo);
+ssize_t reciveReqData(SockInfo &sockInfo);
+ssize_t readData(SockInfo &sockInfo, char *buf, size_t length);
+ssize_t writeData(SockInfo &sockInfo, char *buf, size_t length);
+ssize_t sendTunnelOk(SockInfo &sockInfo);
+ssize_t send404(SockInfo &sockInfo);
 void sendFile(SockInfo &sockInfo);
-char *readFile(ifstream &inFile, int &len);
+char *readFile(ifstream &inFile, size_t &len);
 string findFileName(string s);
 string getType(string fName);
 
@@ -61,10 +53,10 @@ int main()
         struct sockaddr_in clntAddr;
         socklen_t clntAddrLen = sizeof(clntAddr);
         int clntSock = accept(servSock, (struct sockaddr *)&clntAddr, &clntAddrLen);
-        int i = 0;
         char *ip = inet_ntoa(clntAddr.sin_addr);
         SockInfo *sockInfo = sockContainer.getSockInfo();
-        if (sockInfo) {
+        if (sockInfo)
+        {
             (*sockInfo).clntSock = clntSock;
             (*sockInfo).ip = (char *)calloc(1, strlen(ip) + 1); // inet_ntoa 获取到的地址永远是同一块地址
             memcpy((*sockInfo).ip, ip, strlen(ip));
@@ -72,7 +64,9 @@ int main()
             pthread_t tid;
             pthread_create(&tid, NULL, initClntSock, sockInfo);
             pthread_detach(tid);
-        } else {
+        }
+        else
+        {
             close(clntSock);
         }
     }
@@ -103,7 +97,7 @@ int initServSock()
 void *initClntSock(void *arg)
 {
     SSL *ssl;
-    int err;
+    ssize_t bufSize = 0;
     SockInfo sockInfo = *((SockInfo *)arg);
     HttpHeader *header = NULL;
     HttpClient httpClient;
@@ -113,9 +107,9 @@ void *initClntSock(void *arg)
 
     ssl = sockInfo.ssl = tlsUtil.checkSLL(clntSock);
 
-    while ((err = reciveReqData(sockInfo)) > 0 && !sockInfo.header)
+    while ((bufSize = reciveReqData(sockInfo)) > 0 && !sockInfo.header)
     {
-        int pos = kmpStrstr(sockInfo.buf, "\r\n\r\n", sockInfo.bufSize, 4);
+        size_t pos = kmpStrstr(sockInfo.buf, "\r\n\r\n", sockInfo.bufSize, 4);
         if (pos != -1)
         {
             sockInfo.reqSize = pos + 4;
@@ -125,88 +119,110 @@ void *initClntSock(void *arg)
             sockInfo.header = header;
 
             sockInfo.bufSize -= sockInfo.reqSize;
-            if (sockInfo.bufSize) {
+            if (sockInfo.bufSize)
+            {
                 char *buf = (char *)calloc(1, sockInfo.bufSize + 1);
                 memcpy(buf, sockInfo.buf + sockInfo.reqSize, sockInfo.bufSize);
                 free(sockInfo.buf);
                 sockInfo.buf = buf;
-            } else {
+            }
+            else
+            {
                 free(sockInfo.buf);
                 sockInfo.buf = NULL;
             }
             break;
         }
+
+        if (sockInfo.bufSize > MAX_REQ_SIZE)
+        { // 请求头超出限制
+            bufSize = -1;
+            break;
+        }
     }
 
-    if (err < 0)
+    if (bufSize < 0 || !header || !header->hostname)
     {
         shutdownSock();
         pthread_exit(NULL);
         return NULL;
     }
 
-    while (err > 0)
+    ssize_t preSize = 0;
+    while (bufSize > 0)
     {
-        if (header->boundary)
+        if (header->contentLenth)
         {
-            string boundary = "--";
-            boundary += header->boundary;
-            boundary += "--\r\n";
-            int pos = kmpStrstr(sockInfo.buf, boundary.c_str(), sockInfo.bufSize, boundary.size());
-            if (pos != -1)
+            if (header->contentLenth <= sockInfo.bufSize)
             {
-                sockInfo.bodySize = pos + boundary.size();
+                sockInfo.bodySize = header->contentLenth;
                 sockInfo.body = (char *)calloc(1, sockInfo.bodySize + 1);
                 memcpy(sockInfo.body, sockInfo.buf, sockInfo.bodySize);
                 break;
+            }
+        }
+        else if (header->boundary)
+        {
+            if (sockInfo.bufSize)
+            {
+                string boundary = "--";
+                boundary += header->boundary;
+                boundary += "--\r\n";
+                preSize = preSize > boundary.size() ? preSize - boundary.size() : preSize;
+                size_t pos = kmpStrstr(sockInfo.buf, boundary.c_str(), sockInfo.bufSize, boundary.size(), preSize);
+                if (pos != -1)
+                {
+                    sockInfo.bodySize = pos + boundary.size();
+                    sockInfo.body = (char *)calloc(1, sockInfo.bodySize + 1);
+                    memcpy(sockInfo.body, sockInfo.buf, sockInfo.bodySize);
+                    break;
+                }
             }
         }
         else if (header->contentLenth == 0)
         {
             break;
         }
-        else if (header->contentLenth <= sockInfo.bufSize)
-        {
-            sockInfo.bodySize = header->contentLenth;
-            sockInfo.body = (char *)calloc(1, sockInfo.bodySize + 1);
-            memcpy(sockInfo.body, sockInfo.buf, sockInfo.bodySize);
+
+        if (sockInfo.bufSize > MAX_BODY_SIZE)
+        { // 请求体超出限制
+            bufSize = -1;
             break;
         }
 
-        err = reciveReqData(sockInfo);
+        preSize = sockInfo.bufSize;
+        bufSize = reciveReqData(sockInfo);
     }
 
-    if (err < 0)
+    if (bufSize < 0)
     {
         shutdownSock();
-        pthread_exit(NULL);
         return NULL;
     }
 
-    if (sockInfo.bodySize) {
+    if (sockInfo.bodySize)
+    {
         sockInfo.bufSize -= sockInfo.bodySize;
-        if (sockInfo.bufSize) {
+        if (sockInfo.bufSize)
+        {
             char *buf = (char *)calloc(1, sockInfo.bufSize + 1);
             memcpy(buf, sockInfo.buf + sockInfo.bodySize, sockInfo.bufSize);
             free(sockInfo.buf);
             sockInfo.buf = buf;
-        } else {
+        }
+        else
+        {
             free(sockInfo.buf);
             sockInfo.buf = NULL;
         }
     }
 
-    if (!header || !header->hostname)
-    {
-        shutdownSock();
-        return NULL;
-    }
-    if (strcmp(header->hostname, "my.test.com") != 0)
-    {
-        shutdownSock();
-        return NULL;
-    }
-    
+    // if (strcmp(header->hostname, "my.test.com") != 0)
+    // {
+    //     shutdownSock();
+    //     return NULL;
+    // }
+
     if (strcmp(header->method, "CONNECT") == 0)
     {
         sendTunnelOk(sockInfo);
@@ -216,16 +232,15 @@ void *initClntSock(void *arg)
     {
         sendFile(sockInfo);
         shutdownSock();
-        pthread_exit(NULL);
     }
 
     return NULL;
 }
 
-int reciveReqData(SockInfo &sockInfo)
+ssize_t reciveReqData(SockInfo &sockInfo)
 {
-    char buf[1024];
-    int bufSize = readData(sockInfo, buf, sizeof(buf));
+    char buf[1024 * 10];
+    ssize_t bufSize = readData(sockInfo, buf, sizeof(buf));
 
     if (bufSize <= 0 || sockInfo.clntSock == -1)
     {
@@ -240,9 +255,9 @@ int reciveReqData(SockInfo &sockInfo)
     return bufSize;
 }
 
-int readData(SockInfo &sockInfo, char *buf, int length)
+ssize_t readData(SockInfo &sockInfo, char *buf, size_t length)
 {
-    int err;
+    ssize_t err;
     if (sockInfo.ssl == NULL)
     {
         err = read(sockInfo.clntSock, buf, length);
@@ -251,13 +266,13 @@ int readData(SockInfo &sockInfo, char *buf, int length)
     {
         err = SSL_read(sockInfo.ssl, buf, length);
     }
-    CHK_SSL(err);
+    CHK_ERR(err);
     return err;
 }
 
-int writeData(SockInfo &sockInfo, char *buf, int length)
+ssize_t writeData(SockInfo &sockInfo, char *buf, size_t length)
 {
-    int err;
+    ssize_t err;
     if (sockInfo.ssl == NULL)
     {
         err = write(sockInfo.clntSock, buf, length);
@@ -266,7 +281,7 @@ int writeData(SockInfo &sockInfo, char *buf, int length)
     {
         err = SSL_write(sockInfo.ssl, buf, length);
     }
-    CHK_SSL(err);
+    CHK_ERR(err);
     return err;
 }
 
@@ -280,11 +295,14 @@ void shutdownSock()
     }
     close(sockInfo.clntSock);
     sockContainer.resetSockInfo(sockInfo);
+
+    sleep(1);
+    pthread_exit(NULL);
 }
 
-int send404(SockInfo &sockInfo)
+ssize_t send404(SockInfo &sockInfo)
 {
-    int err;
+    ssize_t err;
     string s = "HTTP/1.1 404 Not Found\nConnection: close\n\n404 Not Found";
     if (sockInfo.ssl == NULL)
     {
@@ -293,12 +311,12 @@ int send404(SockInfo &sockInfo)
     else
     {
         err = SSL_write(sockInfo.ssl, s.c_str(), s.length());
-        CHK_SSL(err);
+        CHK_ERR(err);
     }
     return err;
 }
 
-int sendTunnelOk(SockInfo &sockInfo)
+ssize_t sendTunnelOk(SockInfo &sockInfo)
 {
     string s = "HTTP/1.1 200 Connection Established\r\n\r\n";
     return write(sockInfo.clntSock, s.c_str(), s.length());
@@ -316,7 +334,7 @@ void sendFile(SockInfo &sockInfo)
         {
             string head = "HTTP/1.1 200 OK\n";
             string type = getType(fName);
-            int len = 0;
+            size_t len = 0;
             char *data = readFile(inFile, len);
 
             head += "Content-Type: " + type + "\n";
@@ -360,7 +378,7 @@ string getType(string fName)
     }
 }
 
-char *readFile(ifstream &inFile, int &len)
+char *readFile(ifstream &inFile, size_t &len)
 {
 
     inFile.seekg(0, inFile.end);
@@ -378,8 +396,8 @@ char *readFile(ifstream &inFile, int &len)
 
 string findFileName(string s)
 {
-    int n = s.find("\r\n"), n1 = 0;
-    if (n < 0)
+    size_t n = s.find("\r\n"), n1 = 0;
+    if (n == s.npos)
     {
         return "";
     }

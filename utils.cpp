@@ -53,14 +53,14 @@ int *getLink(const char *p, size_t pSize)
     return link;
 }
 
-int kmpStrstr(const char *s, const char *p, size_t sSize, size_t pSize)
+int kmpStrstr(const char *s, const char *p, size_t sSize, size_t pSize, size_t start)
 {
     if (pSize > sSize)
     {
         return -1;
     }
     int *link = getLink(p, pSize);
-    int i = 0, j = 0;
+    int i = start, j = 0;
     while (i < sSize && j < pSize)
     {
         if (s[i] == p[j])

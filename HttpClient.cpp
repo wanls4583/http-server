@@ -109,7 +109,7 @@ HttpHeader *HttpClient::getHttpHeader(SockInfo *sockInfo)
         }
         else if (prop.compare("Content-Length") == 0)
         {
-            header->contentLenth = atoi(val.c_str());
+            header->contentLenth = atol(val.c_str());
         }
         else if (prop.compare("Connection") == 0)
         {

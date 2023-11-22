@@ -1,4 +1,5 @@
-#ifndef SockInfo
+#ifndef SockInfo_h
+#define SockInfo_h
 #include <openssl/ssl.h>
 #include "HttpHeader.h"
 struct SockInfo
@@ -6,9 +7,9 @@ struct SockInfo
     HttpHeader *header;
     SSL *ssl;
     int clntSock;
-    int bufSize;
-    int reqSize;
-    int bodySize;
+    size_t bufSize;
+    size_t reqSize;
+    size_t bodySize;
     char *ip;
     char *req;
     char *body;
