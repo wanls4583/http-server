@@ -82,5 +82,7 @@ int kmpStrstr(const char *s, const char *p, size_t sSize, size_t pSize)
     {
         return i - j;
     }
+    free(link);
+
     return -1;
 }

@@ -43,5 +43,6 @@ public:
     char *getServerName(int clntSock);
     SSL_CTX *getCert(int clntSock);
     SSL_CTX *initCert(char *serverName);
+    SSL *checkSLL(int clntSock);
 };
 #endif

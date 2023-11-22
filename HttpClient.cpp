@@ -105,6 +105,7 @@ HttpHeader *HttpClient::getHttpHeader(SockInfo *sockInfo)
                     strcpy(header->boundary, s.substr(boundary.size()).c_str());
                 }
             }
+            free(strs);
         }
         else if (prop.compare("Content-Length") == 0)
         {

@@ -15,4 +15,6 @@ struct SockInfo
     char *body;
     char *buf; //未处理的buf
 };
+
+void resetSockInfo(SockInfo &sockInfo);
 #endif

@@ -34,15 +34,12 @@ int initServSock();
 void *initClntSock(void *arg);
 void shutdownSock();
 void initSockInfos();
-void resetSockInfo(SockInfo &sockInfo);
-SSL *checkSLL(int clntSock);
 int reciveReqData(SockInfo &sockInfo);
 int readData(SockInfo &sockInfo, char *buf, int length);
 int writeData(SockInfo &sockInfo, char *buf, int length);
 int sendTunnelOk(SockInfo &sockInfo);
 int send404(SockInfo &sockInfo);
 void sendFile(SockInfo &sockInfo);
-HttpHeader *getHttpHeader(SockInfo &sockInfo, string req);
 char *readFile(ifstream &inFile, int &len);
 string findFileName(string s);
 string getType(string fName);
@@ -118,7 +115,7 @@ void *initClntSock(void *arg)
 
     pthread_setspecific(ptKey, arg);
 
-    ssl = sockInfo.ssl = checkSLL(clntSock);
+    ssl = sockInfo.ssl = tlsUtil.checkSLL(clntSock);
 
     while ((err = reciveReqData(sockInfo)) > 0 && !sockInfo.header)
     {
@@ -294,21 +291,6 @@ void initSockInfos()
     }
 }
 
-void resetSockInfo(SockInfo &sockInfo)
-{
-    sockInfo.header = NULL;
-    sockInfo.ssl = NULL;
-    sockInfo.clntSock = -1;
-    sockInfo.bufSize = 0;
-    sockInfo.reqSize = 0;
-    sockInfo.bodySize = 0;
-    sockInfo.bodyEndFlag = 0;
-    sockInfo.ip = NULL;
-    sockInfo.req = NULL;
-    sockInfo.body = NULL;
-    sockInfo.buf = NULL;
-}
-
 void shutdownSock()
 {
     SockInfo &sockInfo = *(SockInfo *)pthread_getspecific(ptKey);
@@ -319,32 +301,6 @@ void shutdownSock()
     }
     close(sockInfo.clntSock);
     resetSockInfo(sockInfo);
-}
-
-SSL *checkSLL(int clntSock)
-{
-    char buf[2];
-    SSL *ssl = NULL;
-    SSL_CTX *ctx = NULL;
-    if (!tlsUtil.isClntHello(clntSock))
-    {
-        return NULL;
-    }
-    ctx = tlsUtil.getCert(clntSock);
-    if (!ctx)
-    {
-        return NULL;
-    }
-    X509 *client_cert;
-    int err;
-    char *str;
-    ssl = SSL_new(ctx);
-    CHK_NULL(ssl);
-    SSL_set_fd(ssl, clntSock);
-    err = SSL_accept(ssl);
-    CHK_SSL(err);
-    // printf("SSL connection using %s\n", SSL_get_cipher(ssl)); // TLS_AES_128_GCM_SHA256
-    return ssl;
 }
 
 int send404(SockInfo &sockInfo)

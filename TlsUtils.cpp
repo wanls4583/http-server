@@ -7,8 +7,8 @@
 
 using namespace std;
 
-
-TlsUtils::TlsUtils() : ctxHead(NULL), ctxEnd(NULL), maxCtx(100), ctxCount(0){
+TlsUtils::TlsUtils() : ctxHead(NULL), ctxEnd(NULL), maxCtx(100), ctxCount(0)
+{
     pthread_mutex_init(&certMutex, NULL);
 };
 
@@ -92,7 +92,8 @@ SSL_CTX *TlsUtils::getCert(int clntSock)
 {
     pthread_mutex_lock(&certMutex);
     char *serverName = this->getServerName(clntSock);
-    if (!serverName) {
+    if (!serverName)
+    {
         serverName = (char *)"127.0.0.1";
     }
     ServerMap *head = this->ctxHead;
@@ -182,4 +183,28 @@ SSL_CTX *TlsUtils::initCert(char *serverName)
         return NULL;
     }
     return ctx;
+}
+
+SSL *TlsUtils::checkSLL(int clntSock)
+{
+    char buf[2];
+    SSL *ssl = NULL;
+    SSL_CTX *ctx = NULL;
+    if (!this->isClntHello(clntSock))
+    {
+        return NULL;
+    }
+    ctx = this->getCert(clntSock);
+    if (!ctx)
+    {
+        return NULL;
+    }
+    X509 *client_cert;
+    int err;
+    char *str;
+    ssl = SSL_new(ctx);
+    SSL_set_fd(ssl, clntSock);
+    err = SSL_accept(ssl);
+    // printf("SSL connection using %s\n", SSL_get_cipher(ssl)); // TLS_AES_128_GCM_SHA256
+    return ssl;
 }
