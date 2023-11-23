@@ -31,7 +31,6 @@ void SockContainer::resetSockInfo(SockInfo &sockInfo)
         free(sockInfo.header->acceptLanguage);
         free(sockInfo.header);
     }
-    free(sockInfo.ssl);
     free(sockInfo.ip);
     free(sockInfo.req);
     free(sockInfo.body);

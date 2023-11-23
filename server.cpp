@@ -98,7 +98,7 @@ void *initClntSock(void *arg)
 {
     SSL *ssl;
     ssize_t bufSize = 0;
-    SockInfo sockInfo = *((SockInfo *)arg);
+    SockInfo &sockInfo = *((SockInfo *)arg);
     HttpHeader *header = NULL;
     HttpClient httpClient;
     int clntSock = sockInfo.clntSock;
@@ -296,7 +296,6 @@ void shutdownSock()
     close(sockInfo.clntSock);
     sockContainer.resetSockInfo(sockInfo);
 
-    sleep(1);
     pthread_exit(NULL);
 }
 
