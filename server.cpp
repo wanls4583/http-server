@@ -49,8 +49,7 @@ int main()
     pthread_key_create(&ptKey, NULL);
     servSock = initServSock();
 
-    signal(SIGALRM, checkSockTimeout);
-    alarm(1);
+    checkSockTimeout(0);
 
     while (1)
     {
@@ -250,6 +249,7 @@ void *initClntSock(void *arg)
 
 void checkSockTimeout(int n) {
     sockContainer.checkSockTimeout();
+    signal(SIGALRM, checkSockTimeout);
     alarm(1);
 }
 
