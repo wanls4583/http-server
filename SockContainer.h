@@ -1,6 +1,8 @@
 #ifndef SockInfo_h
 #define SockInfo_h
 #include <openssl/ssl.h>
+#include <sys/time.h>
+#include <unistd.h>
 #include "HttpHeader.h"
 struct SockInfo
 {
@@ -14,6 +16,8 @@ struct SockInfo
     char *req;
     char *body;
     char *buf; // 未处理的buf
+    struct timeval tv;
+    pthread_t tid;
 };
 
 const int MAX_SOCK = 100;
@@ -24,10 +28,14 @@ private:
     SockInfo sockInfos[MAX_SOCK];
     pthread_mutex_t sockContainerMutex;
 public:
+    int timeout;
     SockContainer();
     ~SockContainer();
     void resetSockInfo(SockInfo &sockInfo);
+    void resetSockInfoData(SockInfo &sockInfo);
     void initSockInfos();
     SockInfo *getSockInfo();
+    void shutdownSock(SockInfo *sockInfo = NULL);
+    void checkSockTimeout();
 };
 #endif

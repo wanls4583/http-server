@@ -18,23 +18,23 @@
     {                                \
         ERR_print_errors_fp(stderr); \
         cout << "CHK_ERR" << endl;   \
-        shutdownSock();              \
+        sockContainer.shutdownSock();              \
     }
 
 using namespace std;
 
 int initServSock();
 void *initClntSock(void *arg);
-void shutdownSock();
 ssize_t reciveReqData(SockInfo &sockInfo);
 ssize_t readData(SockInfo &sockInfo, char *buf, size_t length);
 ssize_t writeData(SockInfo &sockInfo, char *buf, size_t length);
 ssize_t sendTunnelOk(SockInfo &sockInfo);
 ssize_t send404(SockInfo &sockInfo);
-void sendFile(SockInfo &sockInfo);
+int sendFile(SockInfo &sockInfo);
 char *readFile(ifstream &inFile, size_t &len);
 string findFileName(string s);
 string getType(string fName);
+void checkSockTimeout(int n);
 
 const int port = 8000;
 static int servSock;
@@ -49,6 +49,9 @@ int main()
     pthread_key_create(&ptKey, NULL);
     servSock = initServSock();
 
+    signal(SIGALRM, checkSockTimeout);
+    alarm(1);
+
     while (1)
     {
         struct sockaddr_in clntAddr;
@@ -58,13 +61,15 @@ int main()
         SockInfo *sockInfo = sockContainer.getSockInfo();
         if (sockInfo)
         {
+            pthread_t tid;
+
             (*sockInfo).clntSock = clntSock;
             (*sockInfo).ip = (char *)calloc(1, strlen(ip) + 1); // inet_ntoa 获取到的地址永远是同一块地址
             memcpy((*sockInfo).ip, ip, strlen(ip));
 
-            pthread_t tid;
             pthread_create(&tid, NULL, initClntSock, sockInfo);
             pthread_detach(tid);
+            (*sockInfo).tid = tid;
         }
         else
         {
@@ -104,9 +109,10 @@ void *initClntSock(void *arg)
     HttpClient httpClient;
     int clntSock = sockInfo.clntSock;
 
-    pthread_setspecific(ptKey, arg);
-
-    ssl = sockInfo.ssl = tlsUtil.checkSLL(clntSock);
+    if (!sockInfo.ssl) {
+        pthread_setspecific(ptKey, arg);
+        ssl = sockInfo.ssl = tlsUtil.checkSLL(clntSock);
+    }
 
     while ((bufSize = reciveReqData(sockInfo)) > 0 && !sockInfo.header)
     {
@@ -144,8 +150,7 @@ void *initClntSock(void *arg)
 
     if (bufSize < 0 || !header || !header->hostname)
     {
-        shutdownSock();
-        pthread_exit(NULL);
+        sockContainer.shutdownSock();
         return NULL;
     }
 
@@ -197,7 +202,7 @@ void *initClntSock(void *arg)
 
     if (bufSize < 0)
     {
-        shutdownSock();
+        sockContainer.shutdownSock();
         return NULL;
     }
 
@@ -220,7 +225,7 @@ void *initClntSock(void *arg)
 
     // if (strcmp(header->hostname, "my.test.com") != 0)
     // {
-    //     shutdownSock();
+    //     sockContainer.shutdownSock();
     //     return NULL;
     // }
 
@@ -231,11 +236,21 @@ void *initClntSock(void *arg)
     }
     else if (strcmp(header->method, "GET") == 0 || strcmp(header->method, "POST") == 0)
     {
-        sendFile(sockInfo);
-        shutdownSock();
+        int suc = sendFile(sockInfo);
+        if (strcmp(sockInfo.header->connnection, "close") == 0 || suc == 0) {
+            sockContainer.shutdownSock();
+        } else {
+            sockContainer.resetSockInfoData(sockInfo);
+            initClntSock(arg);
+        }
     }
 
     return NULL;
+}
+
+void checkSockTimeout(int n) {
+    sockContainer.checkSockTimeout();
+    alarm(1);
 }
 
 ssize_t reciveReqData(SockInfo &sockInfo)
@@ -267,6 +282,8 @@ ssize_t readData(SockInfo &sockInfo, char *buf, size_t length)
     {
         err = SSL_read(sockInfo.ssl, buf, length);
     }
+    gettimeofday(&sockInfo.tv, NULL);
+
     CHK_ERR(err);
     return err;
 }
@@ -284,20 +301,6 @@ ssize_t writeData(SockInfo &sockInfo, char *buf, size_t length)
     }
     CHK_ERR(err);
     return err;
-}
-
-void shutdownSock()
-{
-    SockInfo &sockInfo = *(SockInfo *)pthread_getspecific(ptKey);
-    if (sockInfo.ssl != NULL)
-    {
-        SSL_shutdown(sockInfo.ssl);
-        SSL_free(sockInfo.ssl);
-    }
-    close(sockInfo.clntSock);
-    sockContainer.resetSockInfo(sockInfo);
-
-    pthread_exit(NULL);
 }
 
 ssize_t send404(SockInfo &sockInfo)
@@ -322,7 +325,7 @@ ssize_t sendTunnelOk(SockInfo &sockInfo)
     return write(sockInfo.clntSock, s.c_str(), s.length());
 }
 
-void sendFile(SockInfo &sockInfo)
+int sendFile(SockInfo &sockInfo)
 {
     string fName = findFileName(sockInfo.req);
     if (fName.length())
@@ -338,7 +341,12 @@ void sendFile(SockInfo &sockInfo)
             char *data = readFile(inFile, len);
 
             head += "Content-Type: " + type + "\n";
-            head += "Connection: close\n";
+            if (strcmp(sockInfo.header->connnection, "close") == 0) {
+                head += "Connection: close\n";
+            } else {
+                head += "Connection: keep-alive\n";
+                head += "Keep-Alive: timeout=5\n";
+            }
             head += "Content-Length: " + to_string(len) + "\n";
             head += "\n";
 
@@ -354,11 +362,13 @@ void sendFile(SockInfo &sockInfo)
             // cout << "send404:" << buf << endl;
             send404(sockInfo);
         }
+        return 1;
     }
     else
     {
         // cout << "empty:" << buf << endl;
         send404(sockInfo);
+        return 0;
     }
 }
 
