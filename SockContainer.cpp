@@ -111,6 +111,7 @@ SockInfo *SockContainer::getSockInfo()
         {
             gettimeofday(&(this->sockInfos[i].tv), NULL);
             pthread_mutex_unlock(&sockContainerMutex);
+            this->sockInfos[i].clntSock = 0;
             return &this->sockInfos[i];
         }
     }
@@ -133,10 +134,12 @@ void SockContainer::shutdownSock(SockInfo *sockInfo)
     sockInfo->closing = 1; // 关闭中
     if (sockInfo->ssl != NULL)
     {
-        int res = SSL_shutdown(sockInfo->ssl);  // 0:未完成，1:成功，-1:失败
+        int res = SSL_shutdown(sockInfo->ssl); // 0:未完成，1:成功，-1:失败
         shutdown(sockInfo->clntSock, SHUT_RDWR);
         SSL_free(sockInfo->ssl);
-    } else {
+    }
+    else
+    {
         shutdown(sockInfo->clntSock, SHUT_RDWR);
     }
     close(sockInfo->clntSock);
@@ -146,19 +149,15 @@ void SockContainer::shutdownSock(SockInfo *sockInfo)
     pthread_cancel(tid);
 }
 
-void SockContainer::checkSockTimeout()
+int SockContainer::checkSockTimeout(SockInfo &sockInfo)
 {
     struct timeval tv;
+    const int us = 1000000;
     gettimeofday(&tv, NULL);
-    // cout << tv.tv_sec << endl;
-    for (int i = 0; i < MAX_SOCK; i++)
+    if ((tv.tv_sec * us + tv.tv_usec) - (sockInfo.tv.tv_sec * us + sockInfo.tv.tv_usec) > this->timeout * us)
     {
-        if (this->sockInfos[i].clntSock != -1)
-        {
-            if (tv.tv_sec - this->sockInfos[i].tv.tv_sec >= this->timeout)
-            {
-                this->shutdownSock(&this->sockInfos[i]);
-            }
-        }
+        // cout << sockInfo.clntSock << ":" << sockInfo.tv.tv_sec << ":" << sockInfo.tv.tv_usec << ":checkSockTimeout" <<endl;
+        return 0;
     }
+    return 1;
 }

@@ -40,7 +40,6 @@ int sendFile(SockInfo &sockInfo);
 char *readFile(ifstream &inFile, size_t &len);
 string findFileName(string s);
 string getType(string fName);
-void checkSockTimeout(int n);
 
 const int port = 8000;
 static int servSock;
@@ -54,8 +53,6 @@ int main()
 {
     pthread_key_create(&ptKey, NULL);
     servSock = initServSock();
-
-    checkSockTimeout(0);
 
     while (1)
     {
@@ -144,6 +141,10 @@ void *initClntSock(void *arg)
         }
         else if (READ_AGAIN == bufSize)
         {
+            if (!sockContainer.checkSockTimeout(sockInfo)) {
+                hasError = 1;
+                break;
+            }
             usleep(1);
             continue;
         }
@@ -205,6 +206,10 @@ void *initClntSock(void *arg)
         }
         else if (READ_AGAIN == bufSize)
         {
+            if (!sockContainer.checkSockTimeout(sockInfo)) {
+                hasError = 1;
+                break;
+            }
             usleep(1);
             continue;
         }
@@ -287,18 +292,13 @@ void *initClntSock(void *arg)
         else
         {
             sockContainer.resetSockInfoData(sockInfo);
+            gettimeofday(&sockInfo.tv, NULL); // 重置超时时间
+            // cout << sockInfo.clntSock <<  ":" << sockInfo.tv.tv_sec << ":" << sockInfo.tv.tv_usec << endl;
             initClntSock(arg);
         }
     }
 
     return NULL;
-}
-
-void checkSockTimeout(int n)
-{
-    sockContainer.checkSockTimeout();
-    signal(SIGALRM, checkSockTimeout);
-    alarm(1);
 }
 
 ssize_t reciveReqData(SockInfo &sockInfo)
@@ -320,6 +320,7 @@ ssize_t readData(SockInfo &sockInfo, char *buf, size_t length)
 {
     ssize_t err;
     ssize_t result;
+
     if (sockInfo.ssl == NULL)
     {
         err = read(sockInfo.clntSock, buf, length);
@@ -328,6 +329,7 @@ ssize_t readData(SockInfo &sockInfo, char *buf, size_t length)
     {
         err = SSL_read(sockInfo.ssl, buf, length);
     }
+
     result = getSockErr(sockInfo, err);
 
     return result;
@@ -426,7 +428,8 @@ int sendFile(SockInfo &sockInfo)
             else
             {
                 head += "Connection: keep-alive\n";
-                head += "Keep-Alive: timeout=5\n";
+                head += "Keep-Alive: timeout=";
+                head += to_string(sockContainer.timeout) + "\n";
             }
             head += "Content-Length: " + to_string(len) + "\n";
             head += "\n";

@@ -40,6 +40,6 @@ public:
     void initSockInfos();
     SockInfo *getSockInfo();
     void shutdownSock(SockInfo *sockInfo = NULL);
-    void checkSockTimeout();
+    int checkSockTimeout(SockInfo &sockInfo);
 };
 #endif
