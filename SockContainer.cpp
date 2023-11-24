@@ -7,6 +7,7 @@ extern pthread_key_t ptKey;
 SockContainer::SockContainer() : timeout(5)
 {
     pthread_mutex_init(&sockContainerMutex, NULL);
+    pthread_mutex_init(&shutdownMutex, NULL);
     this->initSockInfos();
 }
 
@@ -119,14 +120,14 @@ SockInfo *SockContainer::getSockInfo()
 
 void SockContainer::shutdownSock(SockInfo *sockInfo)
 {
-    // pthread_mutex_lock(&sockContainerMutex);
+    pthread_mutex_lock(&shutdownMutex);
     if (!sockInfo)
     {
         sockInfo = (SockInfo *)pthread_getspecific(ptKey);
     }
     if (sockInfo->clntSock == -1) // 线程已经退出
     {
-        // pthread_mutex_unlock(&sockContainerMutex);
+        pthread_mutex_unlock(&shutdownMutex);
         return;
     }
     sockInfo->closing = 1; // 关闭中
@@ -143,7 +144,7 @@ void SockContainer::shutdownSock(SockInfo *sockInfo)
     }
     close(sockInfo->clntSock);
     pthread_t tid = sockInfo->tid;
-    // pthread_mutex_unlock(&sockContainerMutex);
+    pthread_mutex_unlock(&shutdownMutex);
     this->resetSockInfo(*sockInfo);
     pthread_cancel(tid);
 }

@@ -30,6 +30,7 @@ class SockContainer
 private:
     SockInfo sockInfos[MAX_SOCK];
     pthread_mutex_t sockContainerMutex;
+    pthread_mutex_t shutdownMutex;
 public:
     int timeout;
     SockContainer();
