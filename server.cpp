@@ -73,10 +73,12 @@ int main()
         else
         {
             shutdown(clntSock, SHUT_RDWR);
+            close(clntSock);
         }
     }
 
     shutdown(servSock, SHUT_RDWR);
+    close(servSock);
 
     return 0;
 }

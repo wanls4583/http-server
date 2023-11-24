@@ -119,12 +119,14 @@ SockInfo *SockContainer::getSockInfo()
 
 void SockContainer::shutdownSock(SockInfo *sockInfo)
 {
+    // pthread_mutex_lock(&sockContainerMutex);
     if (!sockInfo)
     {
         sockInfo = (SockInfo *)pthread_getspecific(ptKey);
     }
     if (sockInfo->clntSock == -1) // 线程已经退出
     {
+        // pthread_mutex_unlock(&sockContainerMutex);
         return;
     }
     sockInfo->closing = 1; // 关闭中
@@ -134,6 +136,7 @@ void SockContainer::shutdownSock(SockInfo *sockInfo)
         sleep(1);
         if (res == 0)
         { // 0:未完成，1:成功，-1:失败
+            // pthread_mutex_unlock(&sockContainerMutex);
             this->shutdownSock(sockInfo);
             return;
         }
@@ -142,10 +145,15 @@ void SockContainer::shutdownSock(SockInfo *sockInfo)
             SSL_free(sockInfo->ssl);
         }
     }
-    // close(sockInfo->clntSock); // close 可能会导致线程无法退出
+    pthread_t tid = sockInfo->tid;
+
     shutdown(sockInfo->clntSock, SHUT_RDWR);
-    pthread_cancel(sockInfo->tid);
+    close(sockInfo->clntSock);
+
+    // pthread_mutex_unlock(&sockContainerMutex);
+
     this->resetSockInfo(*sockInfo);
+    pthread_cancel(tid);
 }
 
 void SockContainer::checkSockTimeout()
