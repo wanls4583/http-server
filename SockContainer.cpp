@@ -135,9 +135,6 @@ void SockContainer::shutdownSock(SockInfo *sockInfo)
     {
         int res = SSL_shutdown(sockInfo->ssl);  // 0:未完成，1:成功，-1:失败
         shutdown(sockInfo->clntSock, SHUT_RDWR);
-        if (res == 0) {
-            sleep(1);
-        }
         SSL_free(sockInfo->ssl);
     } else {
         shutdown(sockInfo->clntSock, SHUT_RDWR);

@@ -9,10 +9,15 @@
 #include <openssl/err.h>
 #include <openssl/bio.h>
 #include <pthread.h>
+#include <fcntl.h>
+#include <climits>
 #include "utils.h"
 #include "TlsUtils.h"
 #include "HttpClient.h"
 
+#define READ_AGAIN LONG_MAX
+#define READ_END 0
+#define READ_ERROR 0
 #define CHK_ERR(err)                  \
     if ((err) == -1)                  \
     {                                 \
@@ -28,6 +33,7 @@ void *initClntSock(void *arg);
 ssize_t reciveReqData(SockInfo &sockInfo);
 ssize_t readData(SockInfo &sockInfo, char *buf, size_t length);
 ssize_t writeData(SockInfo &sockInfo, char *buf, size_t length);
+ssize_t getSockErr(SockInfo &sockInfo, ssize_t err);
 ssize_t sendTunnelOk(SockInfo &sockInfo);
 ssize_t send404(SockInfo &sockInfo);
 int sendFile(SockInfo &sockInfo);
@@ -109,6 +115,7 @@ void *initClntSock(void *arg)
     HttpHeader *header = NULL;
     HttpClient httpClient;
     int clntSock = sockInfo.clntSock;
+    int hasError = 0;
 
     if (!sockInfo.ssl)
     {
@@ -116,9 +123,33 @@ void *initClntSock(void *arg)
         ssl = sockInfo.ssl = tlsUtil.checkSLL(clntSock);
     }
 
-    while ((bufSize = reciveReqData(sockInfo)) > 0 && !sockInfo.header)
+    int oldSocketFlag = fcntl(clntSock, F_GETFL, 0);
+    int newSocketFlag = oldSocketFlag | O_NONBLOCK;
+    if (fcntl(clntSock, F_SETFL, newSocketFlag) == -1) // 设置成非阻塞模式
     {
+        shutdown(servSock, SHUT_RDWR);
+        close(clntSock);
+        cout << "set socket to nonblock error." << endl;
+        return NULL;
+    }
+
+    while (!sockInfo.header)
+    {
+        bufSize = reciveReqData(sockInfo);
+
+        if (READ_ERROR == bufSize || READ_END == bufSize || sockInfo.closing || -1 == sockInfo.clntSock)
+        {
+            hasError = 1;
+            break;
+        }
+        else if (READ_AGAIN == bufSize)
+        {
+            usleep(1);
+            continue;
+        }
+
         size_t pos = kmpStrstr(sockInfo.buf, "\r\n\r\n", sockInfo.bufSize, 4);
+
         if (pos != -1)
         {
             sockInfo.reqSize = pos + 4;
@@ -150,15 +181,34 @@ void *initClntSock(void *arg)
         }
     }
 
-    if (bufSize < 0 || !header || !header->hostname)
+    if (hasError || !header || !header->hostname) // 解析请求头失败
     {
         sockContainer.shutdownSock();
         return NULL;
     }
 
-    ssize_t preSize = 0;
-    while (bufSize > 0)
+    ssize_t preSize = -1;
+
+    while (1)
     {
+        if (preSize == -1) {
+            preSize = sockInfo.bufSize;
+        } else {
+            preSize = sockInfo.bufSize;
+            bufSize = reciveReqData(sockInfo);
+        }
+
+        if (READ_ERROR == bufSize || READ_END == bufSize || sockInfo.closing || -1 == sockInfo.clntSock)
+        {
+            hasError = 1;
+            break;
+        }
+        else if (READ_AGAIN == bufSize)
+        {
+            usleep(1);
+            continue;
+        }
+
         if (header->contentLenth)
         {
             if (header->contentLenth <= sockInfo.bufSize)
@@ -194,15 +244,12 @@ void *initClntSock(void *arg)
 
         if (sockInfo.bufSize > MAX_BODY_SIZE)
         { // 请求体超出限制
-            bufSize = -1;
+            bufSize = READ_ERROR;
             break;
         }
-
-        preSize = sockInfo.bufSize;
-        bufSize = reciveReqData(sockInfo);
     }
 
-    if (bufSize < 0)
+    if (hasError) // 获取请求体失败
     {
         sockContainer.shutdownSock();
         return NULL;
@@ -224,12 +271,6 @@ void *initClntSock(void *arg)
             sockInfo.buf = NULL;
         }
     }
-
-    // if (strcmp(header->hostname, "my.test.com") != 0)
-    // {
-    //     sockContainer.shutdownSock();
-    //     return NULL;
-    // }
 
     if (strcmp(header->method, "CONNECT") == 0)
     {
@@ -265,25 +306,20 @@ ssize_t reciveReqData(SockInfo &sockInfo)
     char buf[1024 * 10];
     ssize_t bufSize = readData(sockInfo, buf, sizeof(buf));
 
-    if (bufSize <= 0 || sockInfo.clntSock == -1)
+    if (bufSize > 0 && READ_AGAIN != bufSize)
     {
-        return -1;
+        sockInfo.buf = (char *)realloc(sockInfo.buf, sockInfo.bufSize + bufSize + 1);
+        memcpy(sockInfo.buf + sockInfo.bufSize, buf, bufSize);
+        sockInfo.bufSize += bufSize;
+        sockInfo.buf[sockInfo.bufSize] = '\0';
     }
-
-    sockInfo.buf = (char *)realloc(sockInfo.buf, sockInfo.bufSize + bufSize + 1);
-    memcpy(sockInfo.buf + sockInfo.bufSize, buf, bufSize);
-    sockInfo.bufSize += bufSize;
-    sockInfo.buf[sockInfo.bufSize] = '\0';
-
     return bufSize;
 }
 
 ssize_t readData(SockInfo &sockInfo, char *buf, size_t length)
 {
     ssize_t err;
-    if (sockInfo.closing) {
-        return -1;
-    }
+    ssize_t result;
     if (sockInfo.ssl == NULL)
     {
         err = read(sockInfo.clntSock, buf, length);
@@ -292,28 +328,73 @@ ssize_t readData(SockInfo &sockInfo, char *buf, size_t length)
     {
         err = SSL_read(sockInfo.ssl, buf, length);
     }
-    gettimeofday(&sockInfo.tv, NULL);
+    result = getSockErr(sockInfo, err);
 
-    CHK_ERR(err);
-    return err;
+    return result;
 }
 
 ssize_t writeData(SockInfo &sockInfo, char *buf, size_t length)
 {
     ssize_t err;
-    if (sockInfo.closing) {
-        return -1;
+    ssize_t result = READ_AGAIN;
+
+    while (READ_AGAIN == result)
+    {
+        if (sockInfo.ssl == NULL)
+        {
+            err = write(sockInfo.clntSock, buf, length);
+        }
+        else
+        {
+            err = SSL_write(sockInfo.ssl, buf, length);
+        }
+        result = getSockErr(sockInfo, err);
     }
+
+    return result;
+}
+
+ssize_t getSockErr(SockInfo &sockInfo, ssize_t err)
+{
+    ssize_t result;
+
     if (sockInfo.ssl == NULL)
     {
-        err = write(sockInfo.clntSock, buf, length);
+        if (err > 0)
+        {
+            result = err;
+        }
+        else if (err == 0)
+        {
+            result = READ_END;
+        }
+        else if (errno == EINTR || errno == EWOULDBLOCK || errno == EAGAIN)
+        {
+            result = READ_AGAIN;
+        }
+        else
+        {
+            result = READ_ERROR;
+        }
     }
     else
     {
-        err = SSL_write(sockInfo.ssl, buf, length);
+        int nRes = SSL_get_error(sockInfo.ssl, err);
+        if (nRes == SSL_ERROR_NONE)
+        {
+            result = err;
+        }
+        else if (nRes == SSL_ERROR_WANT_READ)
+        {
+            result = READ_AGAIN;
+        }
+        else
+        {
+            result = READ_ERROR;
+        }
     }
-    CHK_ERR(err);
-    return err;
+
+    return result;
 }
 
 ssize_t sendTunnelOk(SockInfo &sockInfo)
@@ -355,7 +436,7 @@ int sendFile(SockInfo &sockInfo)
             writeData(sockInfo, const_cast<char *>(head.c_str()), head.length());
             writeData(sockInfo, data, len);
 
-            delete[] data;
+            free(data);
         }
         else
         {
@@ -378,18 +459,13 @@ ssize_t send404(SockInfo &sockInfo)
     ssize_t err;
     string str404 = "404 Not Found";
     string s = "HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: ";
+
     s += to_string(str404.size());
     s += "\r\n\r\n";
     s += str404;
-    if (sockInfo.ssl == NULL)
-    {
-        err = write(sockInfo.clntSock, s.c_str(), s.length());
-    }
-    else
-    {
-        err = SSL_write(sockInfo.ssl, s.c_str(), s.length());
-        CHK_ERR(err);
-    }
+
+    err = writeData(sockInfo, const_cast<char *>(s.c_str()), s.length());
+
     return err;
 }
 
@@ -418,7 +494,7 @@ char *readFile(ifstream &inFile, size_t &len)
 
     inFile.seekg(0, inFile.beg);
 
-    char *arr = new char[len];
+    char *arr = (char *)calloc(1, len);
 
     inFile.read(arr, len);
 

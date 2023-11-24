@@ -31,7 +31,7 @@ int split(char **&strs, const string &s, const char delim = ' ')
 
 int *getLink(const char *p, size_t pSize)
 {
-    int *link = new int[pSize]();
+    int *link = (int *)calloc(1, pSize * sizeof(int));
     link[0] = -1;
     link[1] = 0;
     // cout << "-1,0";
@@ -82,7 +82,7 @@ int kmpStrstr(const char *s, const char *p, size_t sSize, size_t pSize, size_t s
     {
         return i - j;
     }
-    delete []link;
+    free(link);
 
     return -1;
 }
