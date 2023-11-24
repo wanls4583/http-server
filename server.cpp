@@ -308,22 +308,6 @@ ssize_t writeData(SockInfo &sockInfo, char *buf, size_t length)
     return err;
 }
 
-ssize_t send404(SockInfo &sockInfo)
-{
-    ssize_t err;
-    string s = "HTTP/1.1 404 Not Found\nConnection: close\n\n404 Not Found";
-    if (sockInfo.ssl == NULL)
-    {
-        err = write(sockInfo.clntSock, s.c_str(), s.length());
-    }
-    else
-    {
-        err = SSL_write(sockInfo.ssl, s.c_str(), s.length());
-        CHK_ERR(err);
-    }
-    return err;
-}
-
 ssize_t sendTunnelOk(SockInfo &sockInfo)
 {
     string s = "HTTP/1.1 200 Connection Established\r\n\r\n";
@@ -369,6 +353,7 @@ int sendFile(SockInfo &sockInfo)
         {
             // cout << "send404:" << buf << endl;
             send404(sockInfo);
+            return 0;
         }
         return 1;
     }
@@ -378,6 +363,26 @@ int sendFile(SockInfo &sockInfo)
         send404(sockInfo);
         return 0;
     }
+}
+
+ssize_t send404(SockInfo &sockInfo)
+{
+    ssize_t err;
+    string str404 = "404 Not Found";
+    string s = "HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: ";
+    s += to_string(str404.size());
+    s += "\r\n\r\n";
+    s += str404;
+    if (sockInfo.ssl == NULL)
+    {
+        err = write(sockInfo.clntSock, s.c_str(), s.length());
+    }
+    else
+    {
+        err = SSL_write(sockInfo.ssl, s.c_str(), s.length());
+        CHK_ERR(err);
+    }
+    return err;
 }
 
 string getType(string fName)
