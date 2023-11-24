@@ -120,7 +120,8 @@ void SockContainer::shutdownSock(SockInfo *sockInfo)
         SSL_shutdown(sockInfo->ssl);
         SSL_free(sockInfo->ssl);
     }
-    close(sockInfo->clntSock);
+    // close(sockInfo->clntSock); // close 可能会导致线程无法退出
+    shutdown(sockInfo->clntSock, SHUT_RDWR);
     pthread_cancel(sockInfo->tid);
     this->resetSockInfo(*sockInfo);
 }

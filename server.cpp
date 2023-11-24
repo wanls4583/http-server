@@ -13,12 +13,12 @@
 #include "TlsUtils.h"
 #include "HttpClient.h"
 
-#define CHK_ERR(err)                 \
-    if ((err) == -1)                 \
-    {                                \
-        ERR_print_errors_fp(stderr); \
-        cout << "CHK_ERR" << endl;   \
-        sockContainer.shutdownSock();              \
+#define CHK_ERR(err)                  \
+    if ((err) == -1)                  \
+    {                                 \
+        ERR_print_errors_fp(stderr);  \
+        cout << "CHK_ERR" << endl;    \
+        sockContainer.shutdownSock(); \
     }
 
 using namespace std;
@@ -108,7 +108,8 @@ void *initClntSock(void *arg)
     HttpClient httpClient;
     int clntSock = sockInfo.clntSock;
 
-    if (!sockInfo.ssl) {
+    if (!sockInfo.ssl)
+    {
         pthread_setspecific(ptKey, arg);
         ssl = sockInfo.ssl = tlsUtil.checkSLL(clntSock);
     }
@@ -236,9 +237,12 @@ void *initClntSock(void *arg)
     else if (strcmp(header->method, "GET") == 0 || strcmp(header->method, "POST") == 0)
     {
         int suc = sendFile(sockInfo);
-        if (strcmp(sockInfo.header->connnection, "close") == 0 || suc == 0) {
+        if (strcmp(sockInfo.header->connnection, "close") == 0 || suc == 0)
+        {
             sockContainer.shutdownSock();
-        } else {
+        }
+        else
+        {
             sockContainer.resetSockInfoData(sockInfo);
             initClntSock(arg);
         }
@@ -247,7 +251,8 @@ void *initClntSock(void *arg)
     return NULL;
 }
 
-void checkSockTimeout(int n) {
+void checkSockTimeout(int n)
+{
     sockContainer.checkSockTimeout();
     signal(SIGALRM, checkSockTimeout);
     alarm(1);
@@ -341,9 +346,12 @@ int sendFile(SockInfo &sockInfo)
             char *data = readFile(inFile, len);
 
             head += "Content-Type: " + type + "\n";
-            if (strcmp(sockInfo.header->connnection, "close") == 0) {
+            if (strcmp(sockInfo.header->connnection, "close") == 0)
+            {
                 head += "Connection: close\n";
-            } else {
+            }
+            else
+            {
                 head += "Connection: keep-alive\n";
                 head += "Keep-Alive: timeout=5\n";
             }

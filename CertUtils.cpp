@@ -17,7 +17,8 @@ CertUtils::CertUtils() : rsa(NULL), rootCert(NULL), rootKey(NULL)
         return;
     }
     this->rsa = RSA_new();
-    ret = RSA_generate_key_ex(rsa, 1024, bne, NULL);
+    // 对于ios系统的客户端，使用RSA密钥的TLS服务器证书和签发证书的CA必须使用长度大于或等于2048位的密钥。TLS 不再信任所用RSA密钥长度小于2048位的证书
+    ret = RSA_generate_key_ex(rsa, 2048, bne, NULL);
     if (ret != 1)
     {
         fprintf(stderr, "MakeLocalKeySSL RSA_generate_key_ex err \n");
