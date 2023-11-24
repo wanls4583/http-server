@@ -1,8 +1,11 @@
 #include "SockContainer.h"
 
+using namespace std;
+
 extern pthread_key_t ptKey;
 
-SockContainer::SockContainer():timeout(5) {
+SockContainer::SockContainer() : timeout(5)
+{
     pthread_mutex_init(&sockContainerMutex, NULL);
     this->initSockInfos();
 }
@@ -51,10 +54,12 @@ void SockContainer::resetSockInfo(SockInfo &sockInfo)
     sockInfo.bodySize = 0;
     sockInfo.tv.tv_sec = 0;
     sockInfo.tv.tv_usec = 0;
+    sockInfo.closing = 0;
     pthread_mutex_unlock(&sockContainerMutex);
 }
 
-void SockContainer::resetSockInfoData(SockInfo &sockInfo) {
+void SockContainer::resetSockInfoData(SockInfo &sockInfo)
+{
     pthread_mutex_lock(&sockContainerMutex);
     if (sockInfo.header)
     {
@@ -96,11 +101,13 @@ void SockContainer::initSockInfos()
     }
 }
 
-SockInfo *SockContainer::getSockInfo() {
+SockInfo *SockContainer::getSockInfo()
+{
     pthread_mutex_lock(&sockContainerMutex);
     for (int i = 0; i < MAX_SOCK; i++)
     {
-        if (this->sockInfos[i].clntSock == -1) {
+        if (this->sockInfos[i].clntSock == -1 && !this->sockInfos[i].closing)
+        {
             gettimeofday(&(this->sockInfos[i].tv), NULL);
             pthread_mutex_unlock(&sockContainerMutex);
             return &this->sockInfos[i];
@@ -112,13 +119,28 @@ SockInfo *SockContainer::getSockInfo() {
 
 void SockContainer::shutdownSock(SockInfo *sockInfo)
 {
-    if (!sockInfo) {
+    if (!sockInfo)
+    {
         sockInfo = (SockInfo *)pthread_getspecific(ptKey);
     }
+    if (sockInfo->clntSock == -1) // 线程已经退出
+    {
+        return;
+    }
+    sockInfo->closing = 1; // 关闭中
     if (sockInfo->ssl != NULL)
     {
-        SSL_shutdown(sockInfo->ssl);
-        SSL_free(sockInfo->ssl);
+        int res = SSL_shutdown(sockInfo->ssl);
+        sleep(1);
+        if (res == 0)
+        { // 0:未完成，1:成功，-1:失败
+            this->shutdownSock(sockInfo);
+            return;
+        }
+        else
+        {
+            SSL_free(sockInfo->ssl);
+        }
     }
     // close(sockInfo->clntSock); // close 可能会导致线程无法退出
     shutdown(sockInfo->clntSock, SHUT_RDWR);
@@ -126,13 +148,17 @@ void SockContainer::shutdownSock(SockInfo *sockInfo)
     this->resetSockInfo(*sockInfo);
 }
 
-void SockContainer::checkSockTimeout() {
+void SockContainer::checkSockTimeout()
+{
     struct timeval tv;
     gettimeofday(&tv, NULL);
+    // cout << tv.tv_sec << endl;
     for (int i = 0; i < MAX_SOCK; i++)
     {
-        if (this->sockInfos[i].clntSock != -1) {
-            if (tv.tv_sec - this->sockInfos[i].tv.tv_sec >= this->timeout) {
+        if (this->sockInfos[i].clntSock != -1)
+        {
+            if (tv.tv_sec - this->sockInfos[i].tv.tv_sec >= this->timeout)
+            {
                 this->shutdownSock(&this->sockInfos[i]);
             }
         }

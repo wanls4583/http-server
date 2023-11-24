@@ -72,7 +72,7 @@ int main()
         }
         else
         {
-            close(clntSock);
+            shutdown(clntSock, SHUT_RDWR);
         }
     }
 
@@ -279,6 +279,9 @@ ssize_t reciveReqData(SockInfo &sockInfo)
 ssize_t readData(SockInfo &sockInfo, char *buf, size_t length)
 {
     ssize_t err;
+    if (sockInfo.closing) {
+        return -1;
+    }
     if (sockInfo.ssl == NULL)
     {
         err = read(sockInfo.clntSock, buf, length);
@@ -296,6 +299,9 @@ ssize_t readData(SockInfo &sockInfo, char *buf, size_t length)
 ssize_t writeData(SockInfo &sockInfo, char *buf, size_t length)
 {
     ssize_t err;
+    if (sockInfo.closing) {
+        return -1;
+    }
     if (sockInfo.ssl == NULL)
     {
         err = write(sockInfo.clntSock, buf, length);
