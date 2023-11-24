@@ -132,26 +132,18 @@ void SockContainer::shutdownSock(SockInfo *sockInfo)
     sockInfo->closing = 1; // 关闭中
     if (sockInfo->ssl != NULL)
     {
-        int res = SSL_shutdown(sockInfo->ssl);
-        sleep(1);
-        if (res == 0)
-        { // 0:未完成，1:成功，-1:失败
-            // pthread_mutex_unlock(&sockContainerMutex);
-            this->shutdownSock(sockInfo);
-            return;
+        int res = SSL_shutdown(sockInfo->ssl);  // 0:未完成，1:成功，-1:失败
+        shutdown(sockInfo->clntSock, SHUT_RDWR);
+        if (res == 0) {
+            sleep(1);
         }
-        else
-        {
-            SSL_free(sockInfo->ssl);
-        }
+        SSL_free(sockInfo->ssl);
+    } else {
+        shutdown(sockInfo->clntSock, SHUT_RDWR);
     }
-    pthread_t tid = sockInfo->tid;
-
-    shutdown(sockInfo->clntSock, SHUT_RDWR);
     close(sockInfo->clntSock);
-
+    pthread_t tid = sockInfo->tid;
     // pthread_mutex_unlock(&sockContainerMutex);
-
     this->resetSockInfo(*sockInfo);
     pthread_cancel(tid);
 }
