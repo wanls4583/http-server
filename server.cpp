@@ -9,7 +9,6 @@
 #include <openssl/err.h>
 #include <openssl/bio.h>
 #include <pthread.h>
-#include <fcntl.h>
 #include "utils.h"
 #include "TlsUtils.h"
 #include "HttpUtils.h"
@@ -45,6 +44,7 @@ int main()
             pthread_t tid;
 
             (*sockInfo).clntSock = clntSock;
+            (*sockInfo).originSockFlag = fcntl(clntSock, F_GETFL, 0);
             (*sockInfo).ip = (char *)calloc(1, strlen(ip) + 1); // inet_ntoa 获取到的地址永远是同一块地址
             memcpy((*sockInfo).ip, ip, strlen(ip));
 
@@ -92,25 +92,45 @@ void *initClntSock(void *arg)
     int clntSock = sockInfo.clntSock;
     int hasError = 0;
 
-    if (!sockInfo.ssl)
-    {
-        pthread_setspecific(ptKey, arg);
-        ssl = sockInfo.ssl = tlsUtil.checkSLL(clntSock);
-    }
+    pthread_setspecific(ptKey, arg);
+    sockContainer.setNoBlock(sockInfo, 1); // 设置成非阻塞模式
 
-    int oldSocketFlag = fcntl(clntSock, F_GETFL, 0);
-    int newSocketFlag = oldSocketFlag | O_NONBLOCK;
-    if (fcntl(clntSock, F_SETFL, newSocketFlag) == -1) // 设置成非阻塞模式
+    if (!sockInfo.isNoCheckSSL)
     {
-        shutdown(servSock, SHUT_RDWR);
-        close(clntSock);
-        cout << "set socket to nonblock error." << endl;
-        return NULL;
+        httpUtils.reciveTlsHeader(sockInfo, hasError);
+
+        if (hasError)
+        {
+            sockContainer.shutdownSock();
+            return NULL;
+        }
+
+        if (httpUtils.isClntHello(sockInfo))
+        {
+            sockContainer.setNoBlock(sockInfo, 0); // ssl握手需要在阻塞模式下
+            ssl = sockInfo.ssl = tlsUtil.getSSL(clntSock);
+            sockContainer.setNoBlock(sockInfo, 1); // 设置成非阻塞模式
+        }
+
+        sockInfo.isNoCheckSSL = 1;
     }
 
     header = httpUtils.reciveReqHeader(sockInfo, hasError);
 
-    if (hasError || !header || !header->hostname) // 解析请求头失败
+    if (hasError)
+    {
+        sockContainer.shutdownSock();
+        return NULL;
+    }
+
+    if (!header || !header->hostname || !header->method)
+    { // 解析请求头失败
+        sockContainer.resetSockInfoData(sockInfo);
+        initClntSock(arg);
+        return NULL;
+    }
+
+    if (strcmp(header->hostname, "my.test.com") != 0)
     {
         sockContainer.shutdownSock();
         return NULL;
@@ -127,20 +147,20 @@ void *initClntSock(void *arg)
     if (strcmp(header->method, "CONNECT") == 0)
     {
         httpUtils.sendTunnelOk(sockInfo);
-        initClntSock(&sockInfo);
+        sockContainer.resetSockInfoData(sockInfo);
+        sockInfo.isNoCheckSSL = 0; // CONNECT请求为https的代理连接请求，下一次请求才是真正的tls握手请求
+        initClntSock(arg);
     }
     else if (strcmp(header->method, "GET") == 0 || strcmp(header->method, "POST") == 0)
     {
         int suc = httpUtils.sendFile(sockInfo);
-        if (strcmp(sockInfo.header->connnection, "close") == 0 || suc == 0)
+        if (sockInfo.header->connnection && strcmp(sockInfo.header->connnection, "close") == 0 || suc == 0)
         {
             sockContainer.shutdownSock();
         }
         else
         {
             sockContainer.resetSockInfoData(sockInfo);
-            gettimeofday(&sockInfo.tv, NULL); // 重置超时时间
-            // cout << sockInfo.clntSock <<  ":" << sockInfo.tv.tv_sec << ":" << sockInfo.tv.tv_usec << endl;
             initClntSock(arg);
         }
     }

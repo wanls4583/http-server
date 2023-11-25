@@ -4,7 +4,7 @@ using namespace std;
 
 extern pthread_key_t ptKey;
 
-SockContainer::SockContainer() : timeout(5)
+SockContainer::SockContainer() : timeout(60)
 {
     pthread_mutex_init(&sockContainerMutex, NULL);
     pthread_mutex_init(&shutdownMutex, NULL);
@@ -38,6 +38,7 @@ void SockContainer::resetSockInfo(SockInfo &sockInfo)
         free(sockInfo.header);
     }
     free(sockInfo.ip);
+    free(sockInfo.tlsHeader);
     free(sockInfo.req);
     free(sockInfo.body);
     free(sockInfo.buf);
@@ -45,6 +46,7 @@ void SockContainer::resetSockInfo(SockInfo &sockInfo)
     sockInfo.header = NULL;
     sockInfo.ssl = NULL;
     sockInfo.ip = NULL;
+    sockInfo.tlsHeader = NULL;
     sockInfo.req = NULL;
     sockInfo.body = NULL;
     sockInfo.buf = NULL;
@@ -53,9 +55,13 @@ void SockContainer::resetSockInfo(SockInfo &sockInfo)
     sockInfo.bufSize = 0;
     sockInfo.reqSize = 0;
     sockInfo.bodySize = 0;
+    
     sockInfo.tv.tv_sec = 0;
     sockInfo.tv.tv_usec = 0;
     sockInfo.closing = 0;
+    sockInfo.originSockFlag = 0;
+    sockInfo.isNoBloack = 0;
+    sockInfo.isNoCheckSSL = 0;
     pthread_mutex_unlock(&sockContainerMutex);
 }
 
@@ -80,11 +86,13 @@ void SockContainer::resetSockInfoData(SockInfo &sockInfo)
         free(sockInfo.header->acceptLanguage);
         free(sockInfo.header);
     }
+    free(sockInfo.tlsHeader);
     free(sockInfo.req);
     free(sockInfo.body);
     free(sockInfo.buf);
 
     sockInfo.header = NULL;
+    sockInfo.tlsHeader = NULL;
     sockInfo.req = NULL;
     sockInfo.body = NULL;
     sockInfo.buf = NULL;
@@ -156,8 +164,23 @@ int SockContainer::checkSockTimeout(SockInfo &sockInfo)
     gettimeofday(&tv, NULL);
     if ((tv.tv_sec * us + tv.tv_usec) - (sockInfo.tv.tv_sec * us + sockInfo.tv.tv_usec) > this->timeout * us)
     {
-        // cout << sockInfo.clntSock << ":" << sockInfo.tv.tv_sec << ":" << sockInfo.tv.tv_usec << ":checkSockTimeout" <<endl;
         return 0;
     }
+    return 1;
+}
+
+int SockContainer::setNoBlock(SockInfo &sockInfo, int isNoBloack) {
+    if (sockInfo.isNoBloack && isNoBloack || !sockInfo.isNoBloack && !isNoBloack) {
+        return 1;
+    }
+    
+    int newSocketFlag = sockInfo.originSockFlag | (isNoBloack ? O_NONBLOCK : O_APPEND);
+    if (fcntl(sockInfo.clntSock, F_SETFL, newSocketFlag) == -1) // 设置成阻塞模式
+    {
+        cout << "set socket block flags error:" << isNoBloack << ":" << newSocketFlag << endl;
+        return 0;
+    }
+    sockInfo.isNoBloack = isNoBloack ? 1 : 0;
+
     return 1;
 }

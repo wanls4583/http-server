@@ -39,10 +39,9 @@ private:
 public:
     TlsUtils();
     unsigned int bufToInt(char *buf, int size);
-    int isClntHello(int clntSock);
     char *getServerName(int clntSock);
     SSL_CTX *getCert(int clntSock);
     SSL_CTX *initCert(char *serverName);
-    SSL *checkSLL(int clntSock);
+    SSL *getSSL(int clntSock);
 };
 #endif

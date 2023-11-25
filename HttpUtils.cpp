@@ -4,16 +4,18 @@ extern SockContainer sockContainer;
 
 HttpUtils::HttpUtils()
 {
+    this->cpuTime = 10;
+    this->endTryTimes = 10;
 }
 
 HttpUtils::~HttpUtils()
 {
 }
 
-HttpHeader *HttpUtils::getHttpHeader(SockInfo *sockInfo)
+HttpHeader *HttpUtils::getHttpHeader(SockInfo &sockInfo)
 {
     HttpHeader *header = (HttpHeader *)calloc(1, sizeof(HttpHeader));
-    string line = "", prop = "", val = "", req = sockInfo->req;
+    string line = "", prop = "", val = "", req = sockInfo.req;
     int pos = req.find("\r\n");
 
     if (pos != req.npos)
@@ -56,7 +58,7 @@ HttpHeader *HttpUtils::getHttpHeader(SockInfo *sockInfo)
             colon = val.find(':');
             if (colon == val.npos)
             {
-                header->port = sockInfo->ssl ? 443 : 80;
+                header->port = sockInfo.ssl ? 443 : 80;
             }
             else
             {
@@ -140,7 +142,7 @@ HttpHeader *HttpUtils::getHttpHeader(SockInfo *sockInfo)
         }
         else if (header->path[0] == '/')
         {
-            string url = sockInfo->ssl ? "https://" : "http://";
+            string url = sockInfo.ssl ? "https://" : "http://";
             url += header->hostname;
             url += ":";
             url += to_string(header->port);
@@ -153,27 +155,63 @@ HttpHeader *HttpUtils::getHttpHeader(SockInfo *sockInfo)
     return header;
 }
 
+int HttpUtils::isClntHello(SockInfo &sockInfo)
+{
+    char *buf = sockInfo.tlsHeader;
+    if (buf && buf[0] == 0x16 && buf[1] == 0x03 && buf[2] == 0x01 && buf[5] == 0x01)
+    {
+        return 1;
+    }
+    return 0;
+}
+
+void HttpUtils::reciveTlsHeader(SockInfo &sockInfo, int &hasError)
+{
+    ssize_t bufSize = 0, count = 0;
+    int len = 6, endTryTimes = 0, loop = 0;
+    char *buf = (char *)calloc(1, len);
+    while (count < len)
+    {
+        bufSize = this->recvData(sockInfo, buf + count, len - count);
+
+        checkError(sockInfo, bufSize, endTryTimes, loop, hasError);
+
+        if (hasError)
+        {
+            break;
+        }
+        else if (loop)
+        {
+            loop = 0;
+            continue;
+        }
+        count += bufSize;
+    }
+
+    if (!hasError)
+    {
+        sockInfo.tlsHeader = buf;
+    }
+}
+
 HttpHeader *HttpUtils::reciveReqHeader(SockInfo &sockInfo, int &hasError)
 {
     HttpHeader *header = NULL;
     ssize_t bufSize = 0;
+    int endTryTimes = 0, loop = 0;
     while (!sockInfo.header)
     {
         bufSize = this->reciveReqData(sockInfo);
 
-        if (READ_ERROR == bufSize || READ_END == bufSize || sockInfo.closing || -1 == sockInfo.clntSock)
+        checkError(sockInfo, bufSize, endTryTimes, loop, hasError);
+
+        if (hasError)
         {
-            hasError = 1;
             break;
         }
-        else if (READ_AGAIN == bufSize)
+        else if (loop)
         {
-            if (!sockContainer.checkSockTimeout(sockInfo))
-            {
-                hasError = 1;
-                break;
-            }
-            usleep(1);
+            loop = 0;
             continue;
         }
 
@@ -184,7 +222,7 @@ HttpHeader *HttpUtils::reciveReqHeader(SockInfo &sockInfo, int &hasError)
             sockInfo.reqSize = pos + 4;
             sockInfo.req = (char *)calloc(1, sockInfo.reqSize + 1);
             memcpy(sockInfo.req, sockInfo.buf, sockInfo.reqSize);
-            header = this->getHttpHeader(&sockInfo);
+            header = this->getHttpHeader(sockInfo);
             sockInfo.header = header;
 
             sockInfo.bufSize -= sockInfo.reqSize;
@@ -205,7 +243,6 @@ HttpHeader *HttpUtils::reciveReqHeader(SockInfo &sockInfo, int &hasError)
 
         if (sockInfo.bufSize > MAX_REQ_SIZE)
         { // 请求头超出限制
-            bufSize = -1;
             break;
         }
     }
@@ -218,6 +255,7 @@ void HttpUtils::reciveReqBody(SockInfo &sockInfo, int &hasError)
     ssize_t preSize = -1;
     ssize_t bufSize = -1;
     HttpHeader *header = sockInfo.header;
+    int endTryTimes = 0, loop = 0;
 
     while (1)
     {
@@ -231,19 +269,15 @@ void HttpUtils::reciveReqBody(SockInfo &sockInfo, int &hasError)
             bufSize = this->reciveReqData(sockInfo);
         }
 
-        if (READ_ERROR == bufSize || READ_END == bufSize || sockInfo.closing || -1 == sockInfo.clntSock)
+        checkError(sockInfo, bufSize, endTryTimes, loop, hasError);
+
+        if (hasError)
         {
-            hasError = 1;
             break;
         }
-        else if (READ_AGAIN == bufSize)
+        else if (loop)
         {
-            if (!sockContainer.checkSockTimeout(sockInfo))
-            {
-                hasError = 1;
-                break;
-            }
-            usleep(1);
+            loop = 0;
             continue;
         }
 
@@ -320,6 +354,23 @@ ssize_t HttpUtils::reciveReqData(SockInfo &sockInfo)
     return bufSize;
 }
 
+ssize_t HttpUtils::recvData(SockInfo &sockInfo, char *buf, size_t length)
+{
+    ssize_t err;
+    ssize_t result;
+
+    err = recv(sockInfo.clntSock, buf, length, MSG_PEEK);
+
+    result = this->getSockErr(sockInfo, err);
+
+    if (result > 0 && READ_AGAIN != result)
+    {
+        gettimeofday(&sockInfo.tv, NULL); // 重置超时时间
+    }
+
+    return result;
+}
+
 ssize_t HttpUtils::readData(SockInfo &sockInfo, char *buf, size_t length)
 {
     ssize_t err;
@@ -335,6 +386,11 @@ ssize_t HttpUtils::readData(SockInfo &sockInfo, char *buf, size_t length)
     }
 
     result = this->getSockErr(sockInfo, err);
+
+    if (result > 0 && READ_AGAIN != result)
+    {
+        gettimeofday(&sockInfo.tv, NULL); // 重置超时时间
+    }
 
     return result;
 }
@@ -357,22 +413,56 @@ ssize_t HttpUtils::writeData(SockInfo &sockInfo, char *buf, size_t length)
         result = this->getSockErr(sockInfo, err);
     }
 
+    if (result > 0 && READ_AGAIN != result)
+    {
+        gettimeofday(&sockInfo.tv, NULL); // 重置超时时间
+    }
+
     return result;
+}
+
+void HttpUtils::checkError(SockInfo &sockInfo, ssize_t bufSize, int &endTryTimes, int &loop, int &hasError)
+{
+    if (READ_ERROR == bufSize || sockInfo.closing || -1 == sockInfo.clntSock)
+    {
+        hasError = 1;
+        return;
+    }
+    else if (READ_AGAIN == bufSize || READ_END == bufSize)
+    {
+        if (!sockContainer.checkSockTimeout(sockInfo))
+        {
+            hasError = 1;
+            return;
+        }
+        if (READ_END == bufSize)
+        {
+            if (endTryTimes > this->endTryTimes)
+            {
+                hasError = 1;
+                return;
+            }
+            endTryTimes++;
+        }
+        usleep(this->cpuTime);
+        loop = 1;
+    }
 }
 
 ssize_t HttpUtils::getSockErr(SockInfo &sockInfo, ssize_t err)
 {
     ssize_t result;
 
+    if (err == 0)
+    {
+        return READ_END;
+    }
+
     if (sockInfo.ssl == NULL)
     {
         if (err > 0)
         {
             result = err;
-        }
-        else if (err == 0)
-        {
-            result = READ_END;
         }
         else if (errno == EINTR || errno == EWOULDBLOCK || errno == EAGAIN)
         {
@@ -390,7 +480,7 @@ ssize_t HttpUtils::getSockErr(SockInfo &sockInfo, ssize_t err)
         {
             result = err;
         }
-        else if (nRes == SSL_ERROR_WANT_READ)
+        else if (SSL_ERROR_WANT_READ == nRes || SSL_ERROR_WANT_WRITE == nRes)
         {
             result = READ_AGAIN;
         }

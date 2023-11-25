@@ -22,18 +22,6 @@ unsigned int TlsUtils::bufToInt(char *buf, int size)
     return res;
 }
 
-int TlsUtils::isClntHello(int clntSock)
-{
-    char buf[6];
-    memset(buf, 0, sizeof(buf));
-    recv(clntSock, buf, sizeof(buf), MSG_PEEK);
-    if (buf[0] == 0x16 && buf[1] == 0x03 && buf[2] == 0x01 && buf[5] == 0x01)
-    {
-        return 1;
-    }
-    return 0;
-}
-
 char *TlsUtils::getServerName(int clntSock)
 {
     char buf[5], *pos, *serveName = NULL, *end;
@@ -185,15 +173,11 @@ SSL_CTX *TlsUtils::initCert(char *serverName)
     return ctx;
 }
 
-SSL *TlsUtils::checkSLL(int clntSock)
+SSL *TlsUtils::getSSL(int clntSock)
 {
     char buf[2];
     SSL *ssl = NULL;
     SSL_CTX *ctx = NULL;
-    if (!this->isClntHello(clntSock))
-    {
-        return NULL;
-    }
     ctx = this->getCert(clntSock);
     if (!ctx)
     {
