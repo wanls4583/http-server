@@ -1,14 +1,14 @@
-#include "HttpClient.h"
+#include "HttpUtils.h"
 
-HttpClient::HttpClient()
+HttpUtils::HttpUtils()
 {
 }
 
-HttpClient::~HttpClient()
+HttpUtils::~HttpUtils()
 {
 }
 
-char *HttpClient::createReqData(SockInfo *sockInfo)
+char *HttpUtils::createReqData(SockInfo *sockInfo)
 {
     string firstLine = "";
     string req = sockInfo->req;
@@ -28,12 +28,12 @@ char *HttpClient::createReqData(SockInfo *sockInfo)
     return str;
 }
 
-int HttpClient::sendReqData(SockInfo *sockInfo)
+int HttpUtils::sendReqData(SockInfo *sockInfo)
 {
     return 0;
 }
 
-HttpHeader *HttpClient::getHttpHeader(SockInfo *sockInfo)
+HttpHeader *HttpUtils::getHttpHeader(SockInfo *sockInfo)
 {
     HttpHeader *header = (HttpHeader *)calloc(1, sizeof(HttpHeader));
     string line = "", prop = "", val = "", req = sockInfo->req;

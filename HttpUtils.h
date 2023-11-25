@@ -4,12 +4,12 @@
 
 using namespace std;
 
-class HttpClient
+class HttpUtils
 {
 private:
 public:
-    HttpClient();
-    ~HttpClient();
+    HttpUtils();
+    ~HttpUtils();
     HttpHeader *getHttpHeader(SockInfo *sockInfo);
     char *createReqData(SockInfo *sockInfo);
     int sendReqData(SockInfo *sockInfo);

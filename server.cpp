@@ -13,18 +13,11 @@
 #include <climits>
 #include "utils.h"
 #include "TlsUtils.h"
-#include "HttpClient.h"
+#include "HttpUtils.h"
 
 #define READ_AGAIN LONG_MAX
 #define READ_END 0
 #define READ_ERROR 0
-#define CHK_ERR(err)                  \
-    if ((err) == -1)                  \
-    {                                 \
-        ERR_print_errors_fp(stderr);  \
-        cout << "CHK_ERR" << endl;    \
-        sockContainer.shutdownSock(); \
-    }
 
 using namespace std;
 
@@ -45,6 +38,7 @@ const int port = 8000;
 static int servSock;
 static SockContainer sockContainer;
 static TlsUtils tlsUtil;
+static HttpUtils httpUtils;
 struct sockaddr_in servAddr;
 
 pthread_key_t ptKey;
@@ -110,7 +104,6 @@ void *initClntSock(void *arg)
     ssize_t bufSize = 0;
     SockInfo &sockInfo = *((SockInfo *)arg);
     HttpHeader *header = NULL;
-    HttpClient httpClient;
     int clntSock = sockInfo.clntSock;
     int hasError = 0;
 
@@ -156,7 +149,7 @@ void *initClntSock(void *arg)
             sockInfo.reqSize = pos + 4;
             sockInfo.req = (char *)calloc(1, sockInfo.reqSize + 1);
             memcpy(sockInfo.req, sockInfo.buf, sockInfo.reqSize);
-            header = httpClient.getHttpHeader(&sockInfo);
+            header = httpUtils.getHttpHeader(&sockInfo);
             sockInfo.header = header;
 
             sockInfo.bufSize -= sockInfo.reqSize;
