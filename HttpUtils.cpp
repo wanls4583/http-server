@@ -4,7 +4,7 @@ extern SockContainer sockContainer;
 
 HttpUtils::HttpUtils()
 {
-    this->cpuTime = 10;
+    this->cpuTime = 1000; // 1毫秒
     this->endTryTimes = 10;
 }
 
