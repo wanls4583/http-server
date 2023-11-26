@@ -26,9 +26,11 @@ pthread_key_t ptKey;
 
 int initServSock();
 void *initClntSock(void *arg);
+void addRootCert();
 
 int main()
 {
+    addRootCert();
     signal(SIGPIPE, SIG_IGN); // 屏蔽SIGPIPE信号，防止进程退出
     pthread_key_create(&ptKey, NULL);
     servSock = initServSock();
@@ -131,11 +133,11 @@ void *initClntSock(void *arg)
         return NULL;
     }
 
-    if (strcmp(header->hostname, "my.test.com") != 0)
-    {
-        sockContainer.shutdownSock();
-        return NULL;
-    }
+    // if (strcmp(header->hostname, "my.test.com") != 0)
+    // {
+    //     sockContainer.shutdownSock();
+    //     return NULL;
+    // }
 
     httpUtils.reciveReqBody(sockInfo, hasError);
 
@@ -167,4 +169,13 @@ void *initClntSock(void *arg)
     }
 
     return NULL;
+}
+
+void addRootCert() {
+    char *str = runCmd("security find-certificate -c lisong.hn.cn");
+    if (string(str).find("keychain:") != 0)
+    { // 安装证书
+        runCmd("security add-trusted-cert -r trustRoot -k ~/Library/Keychains/login.keychain-db rootCA/rootCA.crt ");
+    }
+    free(str);
 }

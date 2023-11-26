@@ -86,3 +86,21 @@ int kmpStrstr(const char *s, const char *p, size_t sSize, size_t pSize, size_t s
 
     return -1;
 }
+
+char *runCmd(const char *strCmd)
+{
+    FILE *fp = NULL;
+    char buf[1024];
+    char *result = (char *)calloc(1, 4096);
+    if ((fp = popen(strCmd, "r")) != NULL)
+    {
+        while (fgets(buf, 1024, fp) != NULL)
+        {
+            strcat(result, buf);
+        }
+        pclose(fp);
+        fp = NULL;
+        return result;
+    }
+    return NULL;
+}
