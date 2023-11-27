@@ -22,20 +22,20 @@ unsigned int TlsUtils::bufToInt(char *buf, int size)
     return res;
 }
 
-char *TlsUtils::getServerName(int clntSock)
+char *TlsUtils::getServerName(int sock)
 {
     char buf[5], *pos, *serveName = NULL, *end;
     short tlsLen = 0;
     unsigned int sessionIdLen = 0, cipherSuitesLen = 0, compMethLen = 0, extType = 0, extLen = 0;
 
     memset(buf, 0, sizeof(buf));
-    recv(clntSock, buf, sizeof(buf), MSG_PEEK);
+    recv(sock, buf, sizeof(buf), MSG_PEEK);
     memcpy(&tlsLen, buf + 3, 2);
     tlsLen = ntohs(tlsLen);
 
     pos = (char *)malloc(tlsLen);
     memset(pos, 0, tlsLen);
-    recv(clntSock, pos, tlsLen, MSG_PEEK);
+    recv(sock, pos, tlsLen, MSG_PEEK);
     end = pos + tlsLen - 1;
     pos += TLS_PRE_SESSION_LEN;
 
@@ -76,10 +76,10 @@ char *TlsUtils::getServerName(int clntSock)
     return serveName;
 }
 
-SSL_CTX *TlsUtils::getCert(int clntSock)
+SSL_CTX *TlsUtils::getCert(int sock)
 {
     pthread_mutex_lock(&certMutex);
-    char *serverName = this->getServerName(clntSock);
+    char *serverName = this->getServerName(sock);
     if (!serverName)
     {
         serverName = (char *)"127.0.0.1";
@@ -173,12 +173,12 @@ SSL_CTX *TlsUtils::initCert(char *serverName)
     return ctx;
 }
 
-SSL *TlsUtils::getSSL(int clntSock)
+SSL *TlsUtils::getSSL(int sock)
 {
     char buf[2];
     SSL *ssl = NULL;
     SSL_CTX *ctx = NULL;
-    ctx = this->getCert(clntSock);
+    ctx = this->getCert(sock);
     if (!ctx)
     {
         return NULL;
@@ -187,7 +187,7 @@ SSL *TlsUtils::getSSL(int clntSock)
     int err;
     char *str;
     ssl = SSL_new(ctx);
-    SSL_set_fd(ssl, clntSock);
+    SSL_set_fd(ssl, sock);
     err = SSL_accept(ssl);
     // printf("SSL connection using %s\n", SSL_get_cipher(ssl)); // TLS_AES_128_GCM_SHA256
     return ssl;

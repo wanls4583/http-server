@@ -18,7 +18,9 @@ typedef struct HttpHeader
     char *referer;
     char *acceptEncoding;
     char *acceptLanguage;
+    char *reason;
     size_t contentLenth;
     int port;
+    int status;
 } HttpHeader;
 #endif

@@ -19,7 +19,9 @@ private:
 public:
     HttpUtils();
     ~HttpUtils();
-    HttpHeader *getHttpHeader(SockInfo &sockInfo);
+    HttpHeader *getHttpReqHeader(SockInfo &sockInfo);
+    HttpHeader *getHttpResHeader(SockInfo &sockInfo);
+    void setHeaderKeyValue(HttpHeader *header, string head);
     int isClntHello(SockInfo &sockInfo);
     HttpHeader *reciveReqHeader(SockInfo &sockInfo, int &hasError);
     void reciveReqBody(SockInfo &sockInfo, int &hasError);
@@ -35,6 +37,6 @@ public:
     ssize_t send404(SockInfo &sockInfo);
     string getType(string fName);
     char *readFile(ifstream &inFile, size_t &len);
-    string findFileName(string s);
+    string createReqData(SockInfo *sockInfo);
 };
 #endif

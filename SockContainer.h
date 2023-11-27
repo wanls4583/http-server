@@ -7,23 +7,29 @@
 #include <sys/socket.h>
 #include <fcntl.h>
 #include "HttpHeader.h"
+
 struct SockInfo
 {
     HttpHeader *header;
     SSL *ssl;
-    int clntSock;
+    SockInfo *remoteSockInfo;
+
+    int sock;
     int closing;
     int originSockFlag;
     int isNoBloack;
     int isNoCheckSSL;
+
     size_t bufSize;
     size_t reqSize;
     size_t bodySize;
+
     char *ip;
     char *tlsHeader;
-    char *req;
+    char *head;
     char *body;
     char *buf; // 未处理的buf
+
     struct timeval tv;
     pthread_t tid;
 };
@@ -36,10 +42,12 @@ private:
     SockInfo sockInfos[MAX_SOCK];
     pthread_mutex_t sockContainerMutex;
     pthread_mutex_t shutdownMutex;
+
 public:
     int timeout;
     SockContainer();
     ~SockContainer();
+    void freeHeader(HttpHeader *header);
     void resetSockInfo(SockInfo &sockInfo);
     void resetSockInfoData(SockInfo &sockInfo);
     void initSockInfos();

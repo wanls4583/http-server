@@ -12,18 +12,18 @@ HttpUtils::~HttpUtils()
 {
 }
 
-HttpHeader *HttpUtils::getHttpHeader(SockInfo &sockInfo)
+HttpHeader *HttpUtils::getHttpReqHeader(SockInfo &sockInfo)
 {
     HttpHeader *header = (HttpHeader *)calloc(1, sizeof(HttpHeader));
-    string line = "", prop = "", val = "", req = sockInfo.req;
-    int pos = req.find("\r\n");
+    string line = "", prop = "", val = "", head = sockInfo.head;
+    size_t pos = head.find("\r\n");
 
-    if (pos != req.npos)
+    if (pos != head.npos)
     {
-        line = req.substr(0, pos);
-        int lSpace = line.find(' ');
-        int rSpace = line.rfind(' ');
-        if (lSpace == req.npos)
+        line = head.substr(0, pos);
+        size_t lSpace = line.find(' ');
+        size_t rSpace = line.rfind(' ');
+        if (lSpace == head.npos)
         {
             return NULL;
         }
@@ -39,14 +39,95 @@ HttpHeader *HttpUtils::getHttpHeader(SockInfo &sockInfo)
         header->protocol = new char[val.size() + 1];
         strcpy(header->protocol, val.c_str());
 
-        req = req.substr(pos + 2);
+        head = head.substr(pos + 2);
     }
-    while ((pos = req.find("\r\n")) != req.npos)
+
+    this->setHeaderKeyValue(header, head);
+
+    if (!header->port)
     {
-        line = req.substr(0, pos);
-        req = req.substr(pos + 2);
-        int colon = line.find(": ");
-        if (colon == req.npos)
+        header->port = sockInfo.ssl ? 443 : 80;
+    }
+
+    if (header->path)
+    {
+        string path = header->path;
+        pos = path.find("://");
+        if (pos != path.npos)
+        {
+            header->url = header->path;
+            path = path.substr(pos + 3);
+            pos = path.find('/');
+            path = path.substr(pos);
+            header->path = (char *)calloc(1, path.size() + 1);
+            stpcpy(header->path, path.c_str());
+        }
+        else if (header->path[0] == '/')
+        {
+            string url = sockInfo.ssl ? "https://" : "http://";
+            url += header->hostname;
+            url += ":";
+            url += to_string(header->port);
+            url += header->path;
+            header->url = new char[url.size() + 1];
+            strcpy(header->url, url.c_str());
+        }
+    }
+
+    return header;
+}
+
+HttpHeader *HttpUtils::getHttpResHeader(SockInfo &sockInfo)
+{
+    HttpHeader *header = (HttpHeader *)calloc(1, sizeof(HttpHeader));
+    string line = "", prop = "", val = "", head = sockInfo.head;
+    size_t pos = head.find("\r\n");
+
+    if (pos != head.npos)
+    {
+        size_t space = head.npos;
+
+        line = head.substr(0, pos);
+        space = line.find(' ');
+
+        if (space != head.npos)
+        {
+            val = line.substr(0, space);
+            header->protocol = new char[val.size() + 1];
+            strcpy(header->protocol, val.c_str());
+            line = line.substr(space + 1);
+        }
+
+        space = line.find(' ');
+
+        if (space != head.npos)
+        {
+            val = line.substr(0, space);
+            header->status = atoi(val.c_str());
+
+            val = line.substr(space + 1);
+            header->reason = new char[val.size() + 1];
+            strcpy(header->reason, val.c_str());
+        }
+
+        head = head.substr(pos + 2);
+    }
+
+    this->setHeaderKeyValue(header, head);
+
+    return header;
+}
+
+void HttpUtils::setHeaderKeyValue(HttpHeader *header, string head)
+{
+    size_t pos = head.npos;
+    string line = "", prop = "", val = "";
+    while ((pos = head.find("\r\n")) != head.npos)
+    {
+        line = head.substr(0, pos);
+        head = head.substr(pos + 2);
+        size_t colon = line.find(": ");
+        if (colon == head.npos)
         {
             break;
         }
@@ -56,11 +137,7 @@ HttpHeader *HttpUtils::getHttpHeader(SockInfo &sockInfo)
         {
             string host = val;
             colon = val.find(':');
-            if (colon == val.npos)
-            {
-                header->port = sockInfo.ssl ? 443 : 80;
-            }
-            else
+            if (colon != val.npos)
             {
                 header->port = atoi(val.substr(colon + 1).c_str());
                 host = val.substr(0, colon);
@@ -126,33 +203,6 @@ HttpHeader *HttpUtils::getHttpHeader(SockInfo &sockInfo)
             strcpy(header->acceptLanguage, val.c_str());
         }
     }
-
-    if (header->path)
-    {
-        string path = header->path;
-        pos = path.find("://");
-        if (pos != path.npos)
-        {
-            header->url = header->path;
-            path = path.substr(pos + 3);
-            pos = path.find('/');
-            path = path.substr(pos);
-            header->path = (char *)calloc(1, path.size() + 1);
-            stpcpy(header->path, path.c_str());
-        }
-        else if (header->path[0] == '/')
-        {
-            string url = sockInfo.ssl ? "https://" : "http://";
-            url += header->hostname;
-            url += ":";
-            url += to_string(header->port);
-            url += header->path;
-            header->url = new char[url.size() + 1];
-            strcpy(header->url, url.c_str());
-        }
-    }
-
-    return header;
 }
 
 int HttpUtils::isClntHello(SockInfo &sockInfo)
@@ -220,9 +270,9 @@ HttpHeader *HttpUtils::reciveReqHeader(SockInfo &sockInfo, int &hasError)
         if (pos != -1)
         {
             sockInfo.reqSize = pos + 4;
-            sockInfo.req = (char *)calloc(1, sockInfo.reqSize + 1);
-            memcpy(sockInfo.req, sockInfo.buf, sockInfo.reqSize);
-            header = this->getHttpHeader(sockInfo);
+            sockInfo.head = (char *)calloc(1, sockInfo.reqSize + 1);
+            memcpy(sockInfo.head, sockInfo.buf, sockInfo.reqSize);
+            header = this->getHttpReqHeader(sockInfo);
             sockInfo.header = header;
 
             sockInfo.bufSize -= sockInfo.reqSize;
@@ -359,7 +409,7 @@ ssize_t HttpUtils::recvData(SockInfo &sockInfo, char *buf, size_t length)
     ssize_t err;
     ssize_t result;
 
-    err = recv(sockInfo.clntSock, buf, length, MSG_PEEK);
+    err = recv(sockInfo.sock, buf, length, MSG_PEEK);
 
     result = this->getSockErr(sockInfo, err);
 
@@ -378,7 +428,7 @@ ssize_t HttpUtils::readData(SockInfo &sockInfo, char *buf, size_t length)
 
     if (sockInfo.ssl == NULL)
     {
-        err = read(sockInfo.clntSock, buf, length);
+        err = read(sockInfo.sock, buf, length);
     }
     else
     {
@@ -404,7 +454,7 @@ ssize_t HttpUtils::writeData(SockInfo &sockInfo, char *buf, size_t length)
     {
         if (sockInfo.ssl == NULL)
         {
-            err = write(sockInfo.clntSock, buf, length);
+            err = write(sockInfo.sock, buf, length);
         }
         else
         {
@@ -423,7 +473,7 @@ ssize_t HttpUtils::writeData(SockInfo &sockInfo, char *buf, size_t length)
 
 void HttpUtils::checkError(SockInfo &sockInfo, ssize_t bufSize, int &endTryTimes, int &loop, int &hasError)
 {
-    if (READ_ERROR == bufSize || sockInfo.closing || -1 == sockInfo.clntSock)
+    if (READ_ERROR == bufSize || sockInfo.closing || -1 == sockInfo.sock)
     {
         hasError = 1;
         return;
@@ -496,14 +546,19 @@ ssize_t HttpUtils::getSockErr(SockInfo &sockInfo, ssize_t err)
 ssize_t HttpUtils::sendTunnelOk(SockInfo &sockInfo)
 {
     string s = "HTTP/1.1 200 Connection Established\r\n\r\n";
-    return write(sockInfo.clntSock, s.c_str(), s.length());
+    return write(sockInfo.sock, s.c_str(), s.length());
 }
 
 int HttpUtils::sendFile(SockInfo &sockInfo)
 {
-    string fName = this->findFileName(sockInfo.req);
+    string fName = sockInfo.header->path;
     if (fName.length())
     {
+        int pos = fName.find('?');
+        if (pos != fName.npos)
+        {
+            fName = fName.substr(0, pos);
+        }
         fName = "www" + fName;
         ifstream inFile(fName.c_str(), ios::in | ios::binary);
 
@@ -528,8 +583,6 @@ int HttpUtils::sendFile(SockInfo &sockInfo)
             head += "Content-Length: " + to_string(len) + "\n";
             head += "\n";
 
-            // cout << fName << ":" << len << endl;
-
             this->writeData(sockInfo, const_cast<char *>(head.c_str()), head.length());
             this->writeData(sockInfo, data, len);
 
@@ -537,7 +590,6 @@ int HttpUtils::sendFile(SockInfo &sockInfo)
         }
         else
         {
-            // cout << "send404:" << buf << endl;
             this->send404(sockInfo);
             return 0;
         }
@@ -545,7 +597,6 @@ int HttpUtils::sendFile(SockInfo &sockInfo)
     }
     else
     {
-        // cout << "empty:" << buf << endl;
         this->send404(sockInfo);
         return 0;
     }
@@ -598,16 +649,21 @@ char *HttpUtils::readFile(ifstream &inFile, size_t &len)
     return arr;
 }
 
-string HttpUtils::findFileName(string s)
+string HttpUtils::createReqData(SockInfo *sockInfo)
 {
-    size_t n = s.find("\r\n"), n1 = 0;
-    if (n == s.npos)
-    {
-        return "";
-    }
-    s = s.substr(0, n);
-    n = s.find(" ");
-    n1 = s.rfind(" ");
-    s = s.substr(n + 1, n1 - n - 1);
-    return s;
+    string firstLine = "";
+    string head = sockInfo->head;
+    HttpHeader *header = sockInfo->header;
+    char *str = NULL;
+    int pos = head.find("\r\n");
+
+    firstLine += header->method;
+    firstLine += " ";
+    firstLine += header->path;
+    firstLine += " ";
+    firstLine += header->protocol;
+
+    head = firstLine + head.substr(pos);
+
+    return head;
 }

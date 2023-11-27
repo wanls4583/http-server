@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <netdb.h>
 // #include <sys/malloc.h>
 // #include <openssl/applink.c>
 #include <openssl/ssl.h>
@@ -26,6 +27,7 @@ pthread_key_t ptKey;
 
 int initServSock();
 void *initClntSock(void *arg);
+void initRemoteSock(SockInfo &sockInfo);
 void addRootCert();
 
 int main()
@@ -39,15 +41,15 @@ int main()
     {
         struct sockaddr_in clntAddr;
         socklen_t clntAddrLen = sizeof(clntAddr);
-        int clntSock = accept(servSock, (struct sockaddr *)&clntAddr, &clntAddrLen);
+        int sock = accept(servSock, (struct sockaddr *)&clntAddr, &clntAddrLen);
         char *ip = inet_ntoa(clntAddr.sin_addr);
         SockInfo *sockInfo = sockContainer.getSockInfo();
         if (sockInfo)
         {
             pthread_t tid;
 
-            (*sockInfo).clntSock = clntSock;
-            (*sockInfo).originSockFlag = fcntl(clntSock, F_GETFL, 0);
+            (*sockInfo).sock = sock;
+            (*sockInfo).originSockFlag = fcntl(sock, F_GETFL, 0);
             (*sockInfo).ip = (char *)calloc(1, strlen(ip) + 1); // inet_ntoa 获取到的地址永远是同一块地址
             memcpy((*sockInfo).ip, ip, strlen(ip));
 
@@ -57,8 +59,8 @@ int main()
         }
         else
         {
-            shutdown(clntSock, SHUT_RDWR);
-            close(clntSock);
+            shutdown(sock, SHUT_RDWR);
+            close(sock);
         }
     }
 
@@ -92,7 +94,7 @@ void *initClntSock(void *arg)
     ssize_t bufSize = 0;
     SockInfo &sockInfo = *((SockInfo *)arg);
     HttpHeader *header = NULL;
-    int clntSock = sockInfo.clntSock;
+    int sock = sockInfo.sock;
     int hasError = 0;
 
     pthread_setspecific(ptKey, arg);
@@ -111,7 +113,7 @@ void *initClntSock(void *arg)
         if (httpUtils.isClntHello(sockInfo))
         {
             sockContainer.setNoBlock(sockInfo, 0); // ssl握手需要在阻塞模式下
-            ssl = sockInfo.ssl = tlsUtil.getSSL(clntSock);
+            ssl = sockInfo.ssl = tlsUtil.getSSL(sock);
             sockContainer.setNoBlock(sockInfo, 1); // 设置成非阻塞模式
         }
 
@@ -171,7 +173,33 @@ void *initClntSock(void *arg)
     return NULL;
 }
 
-void addRootCert() {
+void initRemoteSock(SockInfo &sockInfo)
+{
+    struct hostent *host = gethostbyname(sockInfo.header->hostname);
+
+    if (!host->h_length)
+    {
+        sockContainer.shutdownSock();
+        return;
+    }
+
+    struct sockaddr_in remoteAddr;
+    int remoteSock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+
+    memset(&remoteAddr, 0, sizeof(remoteAddr));
+    remoteAddr.sin_family = host->h_addrtype;
+    remoteAddr.sin_addr = *((struct in_addr *)host->h_addr_list[0]);
+    remoteAddr.sin_port = htons(sockInfo.header->port);
+    connect(remoteSock, (struct sockaddr *)&remoteAddr, sizeof(remoteAddr));
+
+    sockInfo.remoteSockInfo = (SockInfo *)calloc(1, sizeof(SockInfo));
+    sockContainer.resetSockInfo(*sockInfo.remoteSockInfo);
+
+    sockInfo.remoteSockInfo->sock = remoteSock;
+}
+
+void addRootCert()
+{
     char *str = runCmd("security find-certificate -c lisong.hn.cn");
     if (string(str).find("keychain:") != 0)
     { // 安装证书
