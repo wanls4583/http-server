@@ -55,7 +55,7 @@ int *getLink(const char *p, size_t pSize)
 
 int kmpStrstr(const char *s, const char *p, size_t sSize, size_t pSize, size_t start)
 {
-    if (pSize > sSize)
+    if (pSize > sSize || pSize < 1)
     {
         return -1;
     }

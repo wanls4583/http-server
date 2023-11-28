@@ -22,5 +22,6 @@ typedef struct HttpHeader
     size_t contentLenth;
     int port;
     int status;
+    int isProxyHeader;
 } HttpHeader;
 #endif
