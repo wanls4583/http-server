@@ -3,6 +3,7 @@
 #include <iostream>
 #include <fstream>
 #include <climits>
+#include <sys/stat.h>
 #include "SockContainer.h"
 #include "utils.h"
 

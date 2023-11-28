@@ -1,27 +1,23 @@
 #include "utils.h"
 
-int split(char **&strs, const string &s, const char delim = ' ')
-{
+int split(char**& strs, const string& s, const char delim = ' ') {
     vector<string> sv;
     istringstream iss(s);
     string temp;
 
-    while (getline(iss, temp, delim))
-    {
+    while (getline(iss, temp, delim)) {
         sv.emplace_back(temp);
     }
 
     int size = sv.size();
 
-    if (!size)
-    {
+    if (!size) {
         return 0;
     }
 
-    strs = (char **)calloc(size, sizeof(char *));
+    strs = (char**)calloc(size, sizeof(char*));
 
-    for (int i = 0; i < size; i++)
-    {
+    for (int i = 0; i < size; i++) {
         strs[i] = new char[sv[i].size() + 1];
         strcpy(strs[i], sv[i].c_str());
     }
@@ -29,19 +25,15 @@ int split(char **&strs, const string &s, const char delim = ' ')
     return size;
 }
 
-int *getLink(const char *p, size_t pSize)
-{
-    int *link = (int *)calloc(1, pSize * sizeof(int));
+int* getLink(const char* p, size_t pSize) {
+    int* link = (int*)calloc(1, pSize * sizeof(int));
     link[0] = -1;
     link[1] = 0;
     // cout << "-1,0";
-    for (int i = 2; i < pSize; i++)
-    {
+    for (int i = 2; i < pSize; i++) {
         int j = link[i - 1];
-        while (j > -1)
-        {
-            if (p[i - 1] == p[j])
-            {
+        while (j > -1) {
+            if (p[i - 1] == p[j]) {
                 break;
             }
             j = link[j];
@@ -53,33 +45,25 @@ int *getLink(const char *p, size_t pSize)
     return link;
 }
 
-int kmpStrstr(const char *s, const char *p, size_t sSize, size_t pSize, size_t start)
-{
-    if (pSize > sSize || pSize < 1)
-    {
+int kmpStrstr(const char* s, const char* p, size_t sSize, size_t pSize, size_t start) {
+    if (pSize > sSize || pSize < 1) {
         return -1;
     }
-    int *link = getLink(p, pSize);
+    int* link = getLink(p, pSize);
     int i = start, j = 0;
-    while (i < sSize && j < pSize)
-    {
-        if (s[i] == p[j])
-        {
+    while (i < sSize && j < pSize) {
+        if (s[i] == p[j]) {
             i++;
             j++;
-        }
-        else
-        {
+        } else {
             j = link[j];
-            if (j == -1)
-            {
+            if (j == -1) {
                 i++;
                 j++;
             }
         }
     }
-    if (j >= pSize)
-    {
+    if (j >= pSize) {
         return i - j;
     }
     free(link);
@@ -87,15 +71,21 @@ int kmpStrstr(const char *s, const char *p, size_t sSize, size_t pSize, size_t s
     return -1;
 }
 
-char *runCmd(const char *strCmd)
-{
-    FILE *fp = NULL;
+char* copyStr(const char* str) {
+    if (str && strlen(str)) {
+        char* s = (char*)calloc(1, strlen(str) + 1);
+        strcpy(s, str);
+        return s;
+    }
+    return NULL;
+}
+
+char* runCmd(const char* strCmd) {
+    FILE* fp = NULL;
     char buf[1024];
-    char *result = (char *)calloc(1, 4096);
-    if ((fp = popen(strCmd, "r")) != NULL)
-    {
-        while (fgets(buf, 1024, fp) != NULL)
-        {
+    char* result = (char*)calloc(1, 4096);
+    if ((fp = popen(strCmd, "r")) != NULL) {
+        while (fgets(buf, 1024, fp) != NULL) {
             strcat(result, buf);
         }
         pclose(fp);

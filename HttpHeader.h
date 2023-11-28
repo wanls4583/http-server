@@ -6,6 +6,7 @@ typedef struct HttpHeader
 {
     char *hostname;
     char *protocol;
+    char *originPath;
     char *path;
     char *url;
     char *method;
@@ -18,10 +19,11 @@ typedef struct HttpHeader
     char *referer;
     char *acceptEncoding;
     char *acceptLanguage;
+    char *transferEncoding;
+    char *trailer;
     char *reason;
     size_t contentLenth;
     int port;
     int status;
-    int isProxyHeader;
 } HttpHeader;
 #endif

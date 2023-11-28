@@ -17,6 +17,7 @@ SockContainer::~SockContainer() {
 void SockContainer::freeHeader(HttpHeader* header) {
     free(header->hostname);
     free(header->protocol);
+    free(header->originPath);
     free(header->path);
     free(header->url);
     free(header->method);
@@ -29,6 +30,8 @@ void SockContainer::freeHeader(HttpHeader* header) {
     free(header->referer);
     free(header->acceptEncoding);
     free(header->acceptLanguage);
+    free(header->transferEncoding);
+    free(header->trailer);
     free(header->reason);
     free(header);
 }
@@ -37,6 +40,7 @@ void SockContainer::resetSockInfo(SockInfo& sockInfo) {
     pthread_mutex_lock(&sockContainerMutex);
 
     if (sockInfo.remoteSockInfo) {
+        pthread_mutex_unlock(&sockContainerMutex);
         this->resetSockInfo(*sockInfo.remoteSockInfo);
         free(sockInfo.remoteSockInfo);
         sockInfo.remoteSockInfo = NULL;
@@ -51,7 +55,7 @@ void SockContainer::resetSockInfo(SockInfo& sockInfo) {
     sockInfo.originSockFlag = 0;
     sockInfo.isNoBloack = 0;
     sockInfo.isNoCheckSSL = 0;
-    sockInfo.isRemote = 1;
+    sockInfo.isRemote = 0;
 
     sockInfo.bufSize = 0;
 
@@ -67,8 +71,6 @@ void SockContainer::resetSockInfo(SockInfo& sockInfo) {
 }
 
 void SockContainer::resetSockInfoData(SockInfo& sockInfo) {
-    pthread_mutex_lock(&sockContainerMutex);
-
     if (sockInfo.remoteSockInfo) {
         this->resetSockInfoData(*sockInfo.remoteSockInfo);
     }
@@ -87,7 +89,6 @@ void SockContainer::resetSockInfoData(SockInfo& sockInfo) {
     sockInfo.head = NULL;
     free(sockInfo.body);
     sockInfo.body = NULL;
-    pthread_mutex_unlock(&sockContainerMutex);
 }
 
 void SockContainer::initSockInfos() {

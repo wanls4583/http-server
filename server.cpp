@@ -16,7 +16,7 @@
 
 using namespace std;
 
-static const int port = 8001;
+static const int port = 8000;
 static int servSock;
 static struct sockaddr_in servAddr;
 
@@ -27,7 +27,7 @@ pthread_key_t ptKey;
 
 int initServSock();
 void* initClntSock(void* arg);
-void initRemoteSock(SockInfo& sockInfo);
+int initRemoteSock(SockInfo& sockInfo);
 int forward(SockInfo& sockInfo);
 void addRootCert();
 
@@ -128,6 +128,11 @@ void* initClntSock(void* arg) {
         return NULL;
     }
 
+    // if (strcmp(header->hostname, "www.baidu.com") != 0) {
+    //     sockContainer.shutdownSock();
+    //     return NULL;
+    // }
+
     httpUtils.reciveBody(sockInfo, hasError);
 
     if (hasError) // 获取请求体失败
@@ -141,16 +146,23 @@ void* initClntSock(void* arg) {
         httpUtils.sendTunnelOk(sockInfo);
         sockContainer.resetSockInfoData(sockInfo);
         sockInfo.isNoCheckSSL = 0; // CONNECT请求为https的代理连接请求，下一次请求才是真正的tls握手请求
-        sockInfo.header->isProxyHeader = 1;
+        sockInfo.isRemote = 1;
         initClntSock(arg);
     } else if (strcmp(header->method, "GET") == 0 || strcmp(header->method, "POST") == 0) {
         if (strcmp(sockInfo.header->hostname, "proxy.lisong.hn.cn") == 0) { // 本地访问代理设置页面
             httpUtils.sendFile(sockInfo);
-        } else if (sockInfo.header->isProxyHeader) { // 客户端代理转发请求
+        } else if (sockInfo.isRemote) { // 客户端代理转发请求
             if (!sockInfo.remoteSockInfo) { // 新建远程连接
-                initRemoteSock(sockInfo);
+                if (!initRemoteSock(sockInfo)) {
+                    sockContainer.shutdownSock();
+                    return NULL;
+                }
             }
             if (!forward(sockInfo)) {
+                sockContainer.shutdownSock();
+                return NULL;
+            }
+            if (sockInfo.remoteSockInfo->header->connnection && strcmp(sockInfo.remoteSockInfo->header->connnection, "close") == 0) { // 远程服务器非长连接
                 sockContainer.shutdownSock();
                 return NULL;
             }
@@ -159,7 +171,7 @@ void* initClntSock(void* arg) {
             return NULL;
         }
 
-        if (sockInfo.header->connnection && strcmp(sockInfo.header->connnection, "close") == 0) {
+        if (sockInfo.header->connnection && strcmp(sockInfo.header->connnection, "close") == 0) { // 客户端非长连接
             sockContainer.shutdownSock();
         } else {
             sockContainer.resetSockInfoData(sockInfo);
@@ -170,13 +182,19 @@ void* initClntSock(void* arg) {
     return NULL;
 }
 
-void initRemoteSock(SockInfo& sockInfo) {
+int initRemoteSock(SockInfo& sockInfo) {
     struct hostent* host = gethostbyname(sockInfo.header->hostname);
 
     if (!host->h_length) {
         sockContainer.shutdownSock();
-        return;
+        return 0;
     }
+
+    // char **pptr = host->h_addr_list;
+    // char str[INET_ADDRSTRLEN];
+    // for (int i = 0; *pptr != NULL; pptr++, i++) {
+    //     printf("ip-%d: %s\n", i, inet_ntop(host->h_addrtype, pptr, str, sizeof(str)));
+    // }
 
     struct sockaddr_in remoteAddr;
     int remoteSock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -190,9 +208,31 @@ void initRemoteSock(SockInfo& sockInfo) {
     sockInfo.remoteSockInfo = (SockInfo*)calloc(1, sizeof(SockInfo));
     sockContainer.resetSockInfo(*sockInfo.remoteSockInfo);
     sockInfo.remoteSockInfo->sock = remoteSock;
+
+    if (sockInfo.header->port == 443) {
+        // SSL_load_error_strings();
+        // OpenSSL_add_ssl_algorithms();
+
+        SSL_CTX* ctx = SSL_CTX_new(SSLv23_client_method());
+        SSL* ssl = SSL_new(ctx);
+        sockInfo.remoteSockInfo->ssl = ssl;
+        SSL_set_fd(ssl, remoteSock);
+
+        int retCode = SSL_connect(ssl);
+        if (retCode != 1) {
+            int sslErrCode = SSL_get_error(ssl, retCode);
+            cout << "SSL_connect 调用错误:" << sslErrCode << endl;
+            return 0;
+        }
+    }
+
+    sockContainer.setNoBlock(*sockInfo.remoteSockInfo, 1); // 设置成非阻塞模式
+
+    return 1;
 }
 
 int forward(SockInfo& sockInfo) { // 转发请求
+    SockInfo &remoteSockInfo = *sockInfo.remoteSockInfo;
     string req = httpUtils.createReqData(sockInfo);
     HttpHeader* header = NULL;
     int hasError = 0;
@@ -216,10 +256,16 @@ int forward(SockInfo& sockInfo) { // 转发请求
         return 0;
     }
 
-    string data = sockInfo.remoteSockInfo->head;
-    data += sockInfo.remoteSockInfo->body;
+    int dataSize = remoteSockInfo.reqSize + remoteSockInfo.bodySize;
+    char *data = (char *)calloc(1, dataSize);
+    memcpy(data, remoteSockInfo.head, remoteSockInfo.reqSize);
+    
+    if (remoteSockInfo.bodySize) {
+        memcpy(data + remoteSockInfo.reqSize, remoteSockInfo.body, remoteSockInfo.bodySize);
+    }
 
-    result = httpUtils.writeData(sockInfo, (char*)data.c_str(), data.size());
+    result = httpUtils.writeData(sockInfo, data, dataSize);
+    free(data);
 
     if (READ_ERROR == result || READ_END == result) {
         return 0;

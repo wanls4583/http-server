@@ -109,6 +109,7 @@ SSL_CTX *TlsUtils::getCert(int sock)
     if (this->ctxEnd)
     {
         this->ctxEnd->next = srvMap;
+        this->ctxEnd = srvMap;
     }
     else
     {

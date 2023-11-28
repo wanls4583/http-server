@@ -47,13 +47,13 @@ HttpHeader* HttpUtils::getHttpReqHeader(SockInfo& sockInfo) {
         string path = header->path;
         pos = path.find("://");
         if (pos != path.npos) {
-            header->url = header->path;
-            header->isProxyHeader = 1;
+            free(header->path);
+            header->originPath = copyStr(header->path);
+            header->url = copyStr(header->path);
             path = path.substr(pos + 3);
             pos = path.find('/');
             path = path.substr(pos);
-            header->path = (char*)calloc(1, path.size() + 1);
-            stpcpy(header->path, path.c_str());
+            header->path = copyStr(path.c_str());
         } else if (header->path[0] == '/') {
             string url = sockInfo.ssl ? "https://" : "http://";
             url += header->hostname;
@@ -163,6 +163,15 @@ void HttpUtils::setHeaderKeyValue(HttpHeader* header, string head) {
         } else if (prop.compare("Accept-Language") == 0) {
             header->acceptLanguage = new char[val.size() + 1];
             strcpy(header->acceptLanguage, val.c_str());
+        } else if (prop.compare("Transfer-Encoding") == 0) {
+            header->transferEncoding = new char[val.size() + 1];
+            strcpy(header->transferEncoding, val.c_str());
+        } else if (prop.compare("Transfer-Encoding") == 0) {
+            header->transferEncoding = new char[val.size() + 1];
+            strcpy(header->transferEncoding, val.c_str());
+        } else if (prop.compare("Trailer") == 0) {
+            header->trailer = new char[val.size() + 1];
+            strcpy(header->trailer, val.c_str());
         }
     }
 }
@@ -248,7 +257,16 @@ void HttpUtils::reciveBody(SockInfo& sockInfo, int& hasError) {
     ssize_t preSize = 0;
     ssize_t bufSize = sockInfo.bufSize;
     HttpHeader* header = sockInfo.header;
+    string boundary = "";
     int endTryTimes = 0, loop = 0;
+
+    if (header->boundary) {
+        boundary += "--";
+        boundary += header->boundary;
+        boundary += "--\r\n";
+    } else if (header->transferEncoding) {
+        boundary += "0\r\n\r\n";
+    }
 
     while (1) {
         if (header->contentLenth) {
@@ -258,11 +276,8 @@ void HttpUtils::reciveBody(SockInfo& sockInfo, int& hasError) {
                 memcpy(sockInfo.body, sockInfo.buf, sockInfo.bodySize);
                 break;
             }
-        } else if (header->boundary) {
+        } else if (boundary.size()) {
             if (sockInfo.bufSize) {
-                string boundary = "--";
-                boundary += header->boundary;
-                boundary += "--\r\n";
                 preSize = preSize > boundary.size() ? preSize - boundary.size() : preSize;
                 size_t pos = kmpStrstr(sockInfo.buf, boundary.c_str(), sockInfo.bufSize, boundary.size(), preSize);
                 if (pos != -1) {
@@ -442,23 +457,24 @@ int HttpUtils::sendFile(SockInfo& sockInfo) {
         }
         fName = "www" + fName;
         ifstream inFile(fName.c_str(), ios::in | ios::binary);
+        struct stat s;
 
-        if (inFile.good()) {
-            string head = "HTTP/1.1 200 OK\n";
+        if (inFile.good() && stat(fName.c_str(), &s) == 0 && s.st_mode & S_IFREG) {
+            string head = "HTTP/1.1 200 OK\r\n";
             string type = this->getType(fName);
             size_t len = 0;
             char* data = this->readFile(inFile, len);
 
-            head += "Content-Type: " + type + "\n";
+            head += "Content-Type: " + type + "\r\n";
             if (strcmp(sockInfo.header->connnection, "close") == 0) {
-                head += "Connection: close\n";
+                head += "Connection: close\r\n";
             } else {
-                head += "Connection: keep-alive\n";
+                head += "Connection: keep-alive\r\n";
                 head += "Keep-Alive: timeout=";
-                head += to_string(sockContainer.timeout) + "\n";
+                head += to_string(sockContainer.timeout) + "\r\n";
             }
-            head += "Content-Length: " + to_string(len) + "\n";
-            head += "\n";
+            head += "Content-Length: " + to_string(len) + "\r\n";
+            head += "\r\n";
 
             this->writeData(sockInfo, const_cast<char*>(head.c_str()), head.length());
             this->writeData(sockInfo, data, len);
