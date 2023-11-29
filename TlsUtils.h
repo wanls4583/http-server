@@ -21,7 +21,7 @@ using namespace std;
 
 typedef struct ServerMap
 {
-    char *serveName;
+    char *serverName;
     SSL_CTX *ctx;
     ServerMap *next;
 } ServerMap;
