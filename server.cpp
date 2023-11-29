@@ -148,10 +148,10 @@ void* initClntSock(void* arg) {
         sockInfo.isNoCheckSSL = 0; // CONNECT请求为https的代理连接请求，下一次请求才是真正的tls握手请求
         sockInfo.isRemote = 1;
         initClntSock(arg);
-    } else if (strcmp(header->method, "GET") == 0 || strcmp(header->method, "POST") == 0) {
+    } else if (httpUtils.checkMethod(sockInfo.header->method)) {
         if (strcmp(sockInfo.header->hostname, "proxy.lisong.hn.cn") == 0) { // 本地访问代理设置页面
             httpUtils.sendFile(sockInfo);
-        } else if (sockInfo.isRemote) { // 客户端代理转发请求
+        } else if (sockInfo.isRemote || header->originPath && string(header->originPath).find("http://") == 0) { // 客户端代理转发请求
             if (!sockInfo.remoteSockInfo) { // 新建远程连接
                 if (!initRemoteSock(sockInfo)) {
                     sockContainer.shutdownSock();
@@ -250,10 +250,12 @@ int forward(SockInfo& sockInfo) { // 转发请求
         return 0;
     }
 
-    httpUtils.reciveBody(*sockInfo.remoteSockInfo, hasError);
+    if (strcmp(sockInfo.header->method, "HEAD") != 0) { // HEAD请求没有响应体，即使有，也应该丢弃
+        httpUtils.reciveBody(*sockInfo.remoteSockInfo, hasError);
 
-    if (hasError) {
-        return 0;
+        if (hasError) {
+            return 0;
+        }
     }
 
     int dataSize = remoteSockInfo.reqSize + remoteSockInfo.bodySize;

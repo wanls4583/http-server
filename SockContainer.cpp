@@ -83,6 +83,12 @@ void SockContainer::resetSockInfoData(SockInfo& sockInfo) {
     sockInfo.reqSize = 0;
     sockInfo.bodySize = 0;
 
+    if (sockInfo.isRemote) { // 远程服务器每次只返回一个响应
+        sockInfo.bufSize = 0;
+        free(sockInfo.buf);
+        sockInfo.buf = NULL;
+    }
+
     free(sockInfo.tlsHeader);
     sockInfo.tlsHeader = NULL;
     free(sockInfo.head);

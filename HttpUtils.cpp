@@ -47,7 +47,6 @@ HttpHeader* HttpUtils::getHttpReqHeader(SockInfo& sockInfo) {
         string path = header->path;
         pos = path.find("://");
         if (pos != path.npos) {
-            free(header->path);
             header->originPath = copyStr(header->path);
             header->url = copyStr(header->path);
             path = path.substr(pos + 3);
@@ -55,6 +54,7 @@ HttpHeader* HttpUtils::getHttpReqHeader(SockInfo& sockInfo) {
             if (pos != path.npos) {
                 path = path.substr(pos);
             }
+            free(header->path);
             header->path = copyStr(path.c_str());
         } else if (header->path[0] == '/') {
             string url = sockInfo.ssl ? "https://" : "http://";
@@ -105,6 +105,38 @@ HttpHeader* HttpUtils::getHttpResHeader(SockInfo& sockInfo) {
     this->setHeaderKeyValue(header, head);
 
     return header;
+}
+
+int HttpUtils::checkMethod(const char* method) {
+    if (strcmp(method, "GET")) {
+        return 1;
+    }
+    if (strcmp(method, "POST")) {
+        return 1;
+    }
+    if (strcmp(method, "CONNECT")) {
+        return 1;
+    }
+    if (strcmp(method, "HEAD")) {
+        return 1;
+    }
+    if (strcmp(method, "OPTIONS")) {
+        return 1;
+    }
+    if (strcmp(method, "PUT")) {
+        return 1;
+    }
+    if (strcmp(method, "PATCH")) {
+        return 1;
+    }
+    if (strcmp(method, "DELETE")) {
+        return 1;
+    }
+    if (strcmp(method, "TRACE")) {
+        return 1;
+    }
+
+    return 0;
 }
 
 void HttpUtils::setHeaderKeyValue(HttpHeader* header, string head) {

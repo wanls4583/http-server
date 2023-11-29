@@ -21,6 +21,7 @@ public:
     ~HttpUtils();
     HttpHeader* getHttpReqHeader(SockInfo& sockInfo);
     HttpHeader* getHttpResHeader(SockInfo& sockInfo);
+    int checkMethod(const char* method);
     void setHeaderKeyValue(HttpHeader* header, string head);
     int isClntHello(SockInfo& sockInfo);
     HttpHeader* reciveHeader(SockInfo& sockInfo, int& hasError);
