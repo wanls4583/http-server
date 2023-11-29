@@ -128,7 +128,7 @@ void* initClntSock(void* arg) {
         return NULL;
     }
 
-    // if (strcmp(header->hostname, "www.baidu.com") != 0) {
+    // if (strcmp(header->hostname, "developer.mozilla.org") != 0) {
     //     sockContainer.shutdownSock();
     //     return NULL;
     // }
@@ -146,12 +146,11 @@ void* initClntSock(void* arg) {
         httpUtils.sendTunnelOk(sockInfo);
         sockContainer.resetSockInfoData(sockInfo);
         sockInfo.isNoCheckSSL = 0; // CONNECT请求为https的代理连接请求，下一次请求才是真正的tls握手请求
-        sockInfo.isRemote = 1;
         initClntSock(arg);
     } else if (httpUtils.checkMethod(sockInfo.header->method)) {
         if (strcmp(sockInfo.header->hostname, "proxy.lisong.hn.cn") == 0) { // 本地访问代理设置页面
             httpUtils.sendFile(sockInfo);
-        } else if (sockInfo.isRemote || header->originPath && string(header->originPath).find("http://") == 0) { // 客户端代理转发请求
+        } else if (sockInfo.isRemote) { // 客户端代理转发请求
             if (!sockInfo.remoteSockInfo) { // 新建远程连接
                 if (!initRemoteSock(sockInfo)) {
                     sockContainer.shutdownSock();
@@ -203,8 +202,13 @@ int initRemoteSock(SockInfo& sockInfo) {
     remoteAddr.sin_family = host->h_addrtype;
     remoteAddr.sin_addr = *((struct in_addr*)host->h_addr_list[0]);
     remoteAddr.sin_port = htons(sockInfo.header->port);
-    connect(remoteSock, (struct sockaddr*)&remoteAddr, sizeof(remoteAddr));
 
+    int err = connect(remoteSock, (struct sockaddr*)&remoteAddr, sizeof(remoteAddr));
+    if (err != 0) {
+        cout << "connect 调用错误:" << err << endl;
+        return 0;
+    }
+    
     sockInfo.remoteSockInfo = (SockInfo*)calloc(1, sizeof(SockInfo));
     sockContainer.resetSockInfo(*sockInfo.remoteSockInfo);
     sockInfo.remoteSockInfo->sock = remoteSock;
@@ -218,9 +222,9 @@ int initRemoteSock(SockInfo& sockInfo) {
         sockInfo.remoteSockInfo->ssl = ssl;
         SSL_set_fd(ssl, remoteSock);
 
-        int retCode = SSL_connect(ssl);
-        if (retCode != 1) {
-            int sslErrCode = SSL_get_error(ssl, retCode);
+        err = SSL_connect(ssl);
+        if (err != 1) {
+            int sslErrCode = SSL_get_error(ssl, err);
             cout << "SSL_connect 调用错误:" << sslErrCode << endl;
             return 0;
         }

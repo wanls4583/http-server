@@ -71,13 +71,32 @@ int kmpStrstr(const char* s, const char* p, size_t sSize, size_t pSize, size_t s
     return -1;
 }
 
-char* copyStr(const char* str) {
+char* copyBuf(const char* str) {
     if (str && strlen(str)) {
         char* s = (char*)calloc(1, strlen(str) + 1);
         strcpy(s, str);
         return s;
     }
     return NULL;
+}
+
+char* sliceBuf(const char* str, size_t start, size_t end) {
+    if (end <= start) {
+        return NULL;
+    }
+    char *res = (char *)calloc(1, end - start);
+    memcpy(res, str + start, end - start);
+
+    return res;
+}
+
+char* concatBuf(const char* a, const char* b, size_t aSize, size_t bSize) {
+    char *res = (char *)calloc(1, aSize + bSize);
+
+    memcpy(res, a, aSize);
+    memcpy(res + aSize, b, bSize);
+
+    return res;
 }
 
 char* runCmd(const char* strCmd) {

@@ -38,6 +38,6 @@ public:
     ssize_t send404(SockInfo& sockInfo);
     string getType(string fName);
     char* readFile(ifstream& inFile, size_t& len);
-    string createReqData(SockInfo& sockInfo);
+    char* createReqData(SockInfo& sockInfo);
 };
 #endif

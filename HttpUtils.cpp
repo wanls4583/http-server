@@ -43,19 +43,24 @@ HttpHeader* HttpUtils::getHttpReqHeader(SockInfo& sockInfo) {
         header->port = sockInfo.ssl ? 443 : 80;
     }
 
+    if (strcmp(header->method, "CONNECT") == 0) {
+        sockInfo.isRemote = 1;
+    }
+
     if (header->path) {
         string path = header->path;
         pos = path.find("://");
+        header->originPath = copyBuf(header->path);
         if (pos != path.npos) {
-            header->originPath = copyStr(header->path);
-            header->url = copyStr(header->path);
+            sockInfo.isRemote = 1;
+            header->url = copyBuf(header->path);
             path = path.substr(pos + 3);
             pos = path.find('/');
             if (pos != path.npos) {
                 path = path.substr(pos);
             }
             free(header->path);
-            header->path = copyStr(path.c_str());
+            header->path = copyBuf(path.c_str());
         } else if (header->path[0] == '/') {
             string url = sockInfo.ssl ? "https://" : "http://";
             url += header->hostname;
@@ -564,11 +569,12 @@ char* HttpUtils::readFile(ifstream& inFile, size_t& len) {
     return arr;
 }
 
-string HttpUtils::createReqData(SockInfo& sockInfo) {
+char* HttpUtils::createReqData(SockInfo& sockInfo) {
     string firstLine = "";
     string head = sockInfo.head;
     HttpHeader* header = sockInfo.header;
-    char* str = NULL;
+    size_t size = 0;
+    char* req = NULL;
     int pos = head.find("\r\n");
 
     firstLine += header->method;
@@ -577,7 +583,11 @@ string HttpUtils::createReqData(SockInfo& sockInfo) {
     firstLine += " ";
     firstLine += header->protocol;
 
-    head = firstLine + head.substr(pos);
+    size = firstLine.size() + sockInfo.reqSize - pos + sockInfo.bodySize;
+    req = (char *)calloc(1, size + 1);
+    memcpy(req, firstLine.c_str(), firstLine.size());
+    memcpy(req + firstLine.size(), sockInfo.head + pos, sockInfo.reqSize - pos);
+    memcpy(req + firstLine.size() + sockInfo.reqSize - pos, sockInfo.body, sockInfo.bodySize);
 
-    return head;
+    return req;
 }
