@@ -185,7 +185,7 @@ void* initClntSock(void* arg) {
 int initRemoteSock(SockInfo& sockInfo) {
     struct hostent* host = gethostbyname(sockInfo.header->hostname);
 
-    if (!host->h_length) {
+    if (!host || !host->h_length) {
         sockContainer.shutdownSock();
         return 0;
     }

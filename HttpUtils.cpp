@@ -52,7 +52,9 @@ HttpHeader* HttpUtils::getHttpReqHeader(SockInfo& sockInfo) {
             header->url = copyStr(header->path);
             path = path.substr(pos + 3);
             pos = path.find('/');
-            path = path.substr(pos);
+            if (pos != path.npos) {
+                path = path.substr(pos);
+            }
             header->path = copyStr(path.c_str());
         } else if (header->path[0] == '/') {
             string url = sockInfo.ssl ? "https://" : "http://";
