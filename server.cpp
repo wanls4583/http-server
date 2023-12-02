@@ -221,6 +221,7 @@ int initRemoteSock(SockInfo& sockInfo) {
         SSL* ssl = SSL_new(ctx);
         sockInfo.remoteSockInfo->ssl = ssl;
         SSL_set_fd(ssl, remoteSock);
+        SSL_set_tlsext_host_name(ssl, sockInfo.header->hostname);
 
         err = SSL_connect(ssl);
         if (err != 1) {
