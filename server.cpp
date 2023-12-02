@@ -208,7 +208,7 @@ int initRemoteSock(SockInfo& sockInfo) {
         cout << "connect 调用错误:" << err << endl;
         return 0;
     }
-    
+
     sockInfo.remoteSockInfo = (SockInfo*)calloc(1, sizeof(SockInfo));
     sockContainer.resetSockInfo(*sockInfo.remoteSockInfo);
     sockInfo.remoteSockInfo->sock = remoteSock;
@@ -237,13 +237,16 @@ int initRemoteSock(SockInfo& sockInfo) {
 }
 
 int forward(SockInfo& sockInfo) { // 转发请求
-    SockInfo &remoteSockInfo = *sockInfo.remoteSockInfo;
-    string req = httpUtils.createReqData(sockInfo);
+    SockInfo& remoteSockInfo = *sockInfo.remoteSockInfo;
     HttpHeader* header = NULL;
+    char* req = NULL;
     int hasError = 0;
+    size_t reqSize = 0;
     ssize_t result = 0;
 
-    result = httpUtils.writeData(*sockInfo.remoteSockInfo, (char*)req.c_str(), req.size());
+    httpUtils.createReqData(sockInfo, req, reqSize);
+
+    result = httpUtils.writeData(*sockInfo.remoteSockInfo, req, reqSize);
 
     if (READ_ERROR == result || READ_END == result) {
         return 0;
@@ -264,9 +267,9 @@ int forward(SockInfo& sockInfo) { // 转发请求
     }
 
     int dataSize = remoteSockInfo.reqSize + remoteSockInfo.bodySize;
-    char *data = (char *)calloc(1, dataSize);
+    char* data = (char*)calloc(1, dataSize);
     memcpy(data, remoteSockInfo.head, remoteSockInfo.reqSize);
-    
+
     if (remoteSockInfo.bodySize) {
         memcpy(data + remoteSockInfo.reqSize, remoteSockInfo.body, remoteSockInfo.bodySize);
     }

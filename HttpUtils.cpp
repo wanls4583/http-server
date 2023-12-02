@@ -569,12 +569,10 @@ char* HttpUtils::readFile(ifstream& inFile, size_t& len) {
     return arr;
 }
 
-char* HttpUtils::createReqData(SockInfo& sockInfo) {
+void HttpUtils::createReqData(SockInfo& sockInfo, char*& req, size_t& reqSize) {
     string firstLine = "";
     string head = sockInfo.head;
     HttpHeader* header = sockInfo.header;
-    size_t size = 0;
-    char* req = NULL;
     int pos = head.find("\r\n");
 
     firstLine += header->method;
@@ -583,11 +581,9 @@ char* HttpUtils::createReqData(SockInfo& sockInfo) {
     firstLine += " ";
     firstLine += header->protocol;
 
-    size = firstLine.size() + sockInfo.reqSize - pos + sockInfo.bodySize;
-    req = (char *)calloc(1, size + 1);
+    reqSize = firstLine.size() + sockInfo.reqSize - pos + sockInfo.bodySize;
+    req = (char*)calloc(1, reqSize + 1);
     memcpy(req, firstLine.c_str(), firstLine.size());
     memcpy(req + firstLine.size(), sockInfo.head + pos, sockInfo.reqSize - pos);
     memcpy(req + firstLine.size() + sockInfo.reqSize - pos, sockInfo.body, sockInfo.bodySize);
-
-    return req;
 }
