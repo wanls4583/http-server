@@ -31,12 +31,12 @@ class TlsUtils
 private:
     ServerMap *ctxHead;
     ServerMap *ctxEnd;
-    CertUtils certUtils;
     pthread_mutex_t certMutex;
     int maxCtx;
     int ctxCount;
 
 public:
+    CertUtils certUtils;
     TlsUtils();
     unsigned int bufToInt(char *buf, int size);
     char *getServerName(int sock);

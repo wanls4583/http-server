@@ -2,6 +2,7 @@
 #define UTILS
 #include <iostream>
 #include <sstream>
+#include <fstream>
 
 using namespace std;
 
@@ -11,5 +12,6 @@ int kmpStrstr(const char* s, const char* p, size_t sSize, size_t pSize, size_t s
 char* copyBuf(const char* str);
 char* sliceBuf(const char* str, size_t start, size_t end);
 char* runCmd(const char* strCmd);
+char* readFile(ifstream& inFile, size_t& len);
 
 #endif

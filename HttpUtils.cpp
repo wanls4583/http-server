@@ -51,7 +51,7 @@ HttpHeader* HttpUtils::getHttpReqHeader(SockInfo& sockInfo) {
         string path = header->path;
         pos = path.find("://");
         header->originPath = copyBuf(header->path);
-        if (pos != path.npos) {
+        if (pos != path.npos) { // 代理模式
             sockInfo.isRemote = 1;
             header->url = copyBuf(header->path);
             path = path.substr(pos + 3);
@@ -61,7 +61,7 @@ HttpHeader* HttpUtils::getHttpReqHeader(SockInfo& sockInfo) {
             }
             free(header->path);
             header->path = copyBuf(path.c_str());
-        } else if (header->path[0] == '/') {
+        } else if (header->path[0] == '/') { // 服务器模式
             string url = sockInfo.ssl ? "https://" : "http://";
             url += header->hostname;
             url += ":";
@@ -375,11 +375,12 @@ ssize_t HttpUtils::reciveHttpData(SockInfo& sockInfo) {
     return bufSize;
 }
 
+// 该方法查看流中的数据，但不会将数据从流中删除
 ssize_t HttpUtils::recvData(SockInfo& sockInfo, char* buf, size_t length) {
     ssize_t err;
     ssize_t result;
 
-    err = recv(sockInfo.sock, buf, length, MSG_PEEK);
+    err = recv(sockInfo.sock, buf, length, MSG_PEEK); // MSG_PEEK查看传入数据，数据将复制到缓冲区中，但不会从输入队列中删除
 
     result = this->getSockErr(sockInfo, err);
 
@@ -390,6 +391,7 @@ ssize_t HttpUtils::recvData(SockInfo& sockInfo, char* buf, size_t length) {
     return result;
 }
 
+// 读取流中的数据，并将读取的将数据从流中删除
 ssize_t HttpUtils::readData(SockInfo& sockInfo, char* buf, size_t length) {
     ssize_t err;
     ssize_t result;
@@ -409,6 +411,7 @@ ssize_t HttpUtils::readData(SockInfo& sockInfo, char* buf, size_t length) {
     return result;
 }
 
+// 将数据写入到流中
 ssize_t HttpUtils::writeData(SockInfo& sockInfo, char* buf, size_t length) {
     ssize_t err;
     ssize_t result = READ_AGAIN;
@@ -502,7 +505,7 @@ int HttpUtils::sendFile(SockInfo& sockInfo) {
             string head = "HTTP/1.1 200 OK\r\n";
             string type = this->getType(fName);
             size_t len = 0;
-            char* data = this->readFile(inFile, len);
+            char* data = readFile(inFile, len);
 
             head += "Content-Type: " + type + "\r\n";
             if (strcmp(sockInfo.header->connnection, "close") == 0) {
@@ -552,21 +555,6 @@ string HttpUtils::getType(string fName) {
     } else {
         return "text/html";
     }
-}
-
-char* HttpUtils::readFile(ifstream& inFile, size_t& len) {
-
-    inFile.seekg(0, inFile.end);
-
-    len = inFile.tellg();
-
-    inFile.seekg(0, inFile.beg);
-
-    char* arr = (char*)calloc(1, len);
-
-    inFile.read(arr, len);
-
-    return arr;
 }
 
 void HttpUtils::createReqData(SockInfo& sockInfo, char*& req, size_t& reqSize) {

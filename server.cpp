@@ -145,10 +145,10 @@ void* initClntSock(void* arg) {
     {
         httpUtils.sendTunnelOk(sockInfo);
         sockContainer.resetSockInfoData(sockInfo);
-        sockInfo.isNoCheckSSL = 0; // CONNECT请求为https的代理连接请求，下一次请求才是真正的tls握手请求
+        sockInfo.isNoCheckSSL = 0; // CONNECT请求使用的是http协议，用来为https的代理建立连接，下一次请求才是真正的tls握手请求
         initClntSock(arg);
     } else if (httpUtils.checkMethod(sockInfo.header->method)) {
-        if (strcmp(sockInfo.header->hostname, "proxy.lisong.hn.cn") == 0) { // 本地访问代理设置页面
+        if (sockInfo.header->port == port && (strcmp(sockInfo.header->hostname, "localhost") == 0 || strcmp(sockInfo.header->hostname, "127.0.0.1") == 0)) { // 本地访问代理设置页面
             httpUtils.sendFile(sockInfo);
         } else if (sockInfo.isRemote) { // 客户端代理转发请求
             if (!sockInfo.remoteSockInfo) { // 新建远程连接
@@ -205,7 +205,7 @@ int initRemoteSock(SockInfo& sockInfo) {
 
     int err = connect(remoteSock, (struct sockaddr*)&remoteAddr, sizeof(remoteAddr));
     if (err != 0) {
-        cout << "connect 调用错误:" << err << endl;
+        cout << "connect fail:" << err << endl;
         return 0;
     }
 
@@ -285,9 +285,19 @@ int forward(SockInfo& sockInfo) { // 转发请求
 }
 
 void addRootCert() {
-    char* str = runCmd("security find-certificate -c lisong.hn.cn");
+    char cmd[200];
+    char* cn = tlsUtil.certUtils.getRootCertNameByOid((char *)"2.5.4.3");
+    strcat(cmd, "security find-certificate -c ");
+    strcat(cmd, cn);
+    char* str = runCmd(cmd);
     if (string(str).find("keychain:") != 0) { // 安装证书
         runCmd("security add-trusted-cert -r trustRoot -k ~/Library/Keychains/login.keychain-db rootCA/rootCA.crt ");
     }
+    // 设置http代理
+    runCmd(("networksetup -setwebproxy Wi-Fi 127.0.0.1 " + to_string(port)).c_str());
+    // 设置https代理
+    runCmd(("networksetup -setsecurewebproxy Wi-Fi 127.0.0.1 " + to_string(port)).c_str());
+    // 设置socket代理
+    runCmd(("networksetup -setsocksfirewallproxy Wi-Fi 127.0.0.1 " + to_string(port)).c_str());
     free(str);
 }

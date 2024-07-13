@@ -113,3 +113,18 @@ char* runCmd(const char* strCmd) {
     }
     return NULL;
 }
+
+char* readFile(ifstream& inFile, size_t& len) {
+
+    inFile.seekg(0, inFile.end);
+
+    len = inFile.tellg();
+
+    inFile.seekg(0, inFile.beg);
+
+    char* arr = (char*)calloc(1, len);
+
+    inFile.read(arr, len);
+
+    return arr;
+}

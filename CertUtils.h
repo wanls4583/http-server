@@ -23,5 +23,6 @@ public:
     CertUtils();
     int add_ext(X509 *cert, int nid, char *value);
     int createCertFromRequestFile(EVP_PKEY **pkey, X509 **domainCert, char *serverName);
+    char* getRootCertNameByOid(char* oId);
 };
 #endif

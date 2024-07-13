@@ -126,3 +126,24 @@ int CertUtils::createCertFromRequestFile(EVP_PKEY **pkey, X509 **domainCert, cha
 
     return 1;
 }
+
+char* CertUtils::getRootCertNameByOid(char* oId) {
+    X509_NAME *name = X509_get_issuer_name(rootCert);
+    int entryCount = X509_NAME_entry_count(name);
+    for (int i = 0; i < entryCount; i++) {
+        X509_NAME_ENTRY* entry = X509_NAME_get_entry(name, i);
+        ASN1_OBJECT* obj = X509_NAME_ENTRY_get_object(entry);
+        ASN1_STRING* data = X509_NAME_ENTRY_get_data(entry);
+        // 解析OID为可读字符串
+        char oidStr[80];
+        OBJ_obj2txt(oidStr, sizeof(oidStr), obj, 1);
+        // 获取数据
+        char* dataStr = (char*)ASN1_STRING_get0_data(data);
+        // 打印结果
+        // printf("Field %d: OID=%s, Data=%s\n", i, oidStr, dataStr);
+        if (!strcmp(oidStr, oId)) {
+            return dataStr;
+        }
+    }
+    return (char *)"";
+}

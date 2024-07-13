@@ -165,7 +165,7 @@ int SockContainer::setNoBlock(SockInfo& sockInfo, int isNoBloack) {
     }
 
     int newSocketFlag = sockInfo.originSockFlag | (isNoBloack ? O_NONBLOCK : O_APPEND);
-    if (fcntl(sockInfo.sock, F_SETFL, newSocketFlag) == -1) // 设置成阻塞模式
+    if (fcntl(sockInfo.sock, F_SETFL, newSocketFlag) == -1) // 设置阻塞模式
     {
         cout << "set socket block flags error:" << isNoBloack << ":" << newSocketFlag << endl;
         return 0;
