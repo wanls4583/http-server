@@ -16,7 +16,7 @@
 
 using namespace std;
 
-static const int port = 8000;
+static int proxyPort = 8000;
 static int servSock;
 static struct sockaddr_in servAddr;
 
@@ -29,13 +29,18 @@ int initServSock();
 void* initClntSock(void* arg);
 int initRemoteSock(SockInfo& sockInfo);
 int forward(SockInfo& sockInfo);
+void setProxyPort();
 void addRootCert();
 
 int main() {
+    setProxyPort();
     addRootCert();
     signal(SIGPIPE, SIG_IGN); // 屏蔽SIGPIPE信号，防止进程退出
     pthread_key_create(&ptKey, NULL);
     servSock = initServSock();
+    if (servSock < 0) {
+        return -1;
+    }
 
     while (1) {
         struct sockaddr_in clntAddr;
@@ -74,11 +79,17 @@ int initServSock() {
     servAddr.sin_family = AF_INET;
     // servAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
     servAddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    servAddr.sin_port = htons(port);
+    servAddr.sin_port = htons(proxyPort);
 
-    bind(servSock, (struct sockaddr*)&servAddr, sizeof(servAddr));
-
-    listen(servSock, 10);
+    if (bind(servSock, (struct sockaddr*)&servAddr, sizeof(servAddr)) == -1) {
+        cout << "bind fail" << endl;
+        return -1;
+    }
+    
+    if (listen(servSock, 10) == -1) {
+        cout << "listen fail" << endl;
+        return -2;
+    }
 
     return servSock;
 }
@@ -148,7 +159,7 @@ void* initClntSock(void* arg) {
         sockInfo.isNoCheckSSL = 0; // CONNECT请求使用的是http协议，用来为https的代理建立连接，下一次请求才是真正的tls握手请求
         initClntSock(arg);
     } else if (httpUtils.checkMethod(sockInfo.header->method)) {
-        if (sockInfo.header->port == port && (strcmp(sockInfo.header->hostname, "localhost") == 0 || strcmp(sockInfo.header->hostname, "127.0.0.1") == 0)) { // 本地访问代理设置页面
+        if (sockInfo.header->port == proxyPort && (strcmp(sockInfo.header->hostname, "localhost") == 0 || strcmp(sockInfo.header->hostname, "127.0.0.1") == 0)) { // 本地访问代理设置页面
             httpUtils.sendFile(sockInfo);
         } else if (sockInfo.isProxy) { // 客户端代理转发请求
             if (!sockInfo.remoteSockInfo) { // 新建远程连接
@@ -286,19 +297,32 @@ int forward(SockInfo& sockInfo) { // 转发请求
 }
 
 void addRootCert() {
-    char cmd[200];
+    string cmd = "security find-certificate -c ";
     char* cn = tlsUtil.certUtils.getRootCertNameByOid((char*)"2.5.4.3");
-    strcat(cmd, "security find-certificate -c ");
-    strcat(cmd, cn);
-    char* str = runCmd(cmd);
-    if (string(str).find("keychain:") != 0) { // 安装证书
+    char* cmdRes = runCmd((cmd + string(cn)).c_str());
+    if (string(cmdRes).find("keychain:") != 0) { // 安装证书
         runCmd("security add-trusted-cert -r trustRoot -k ~/Library/Keychains/login.keychain-db rootCA/rootCA.crt ");
     }
     // 设置http代理
-    runCmd(("networksetup -setwebproxy Wi-Fi 127.0.0.1 " + to_string(port)).c_str());
+    runCmd(("networksetup -setwebproxy Wi-Fi 127.0.0.1 " + to_string(proxyPort)).c_str());
     // 设置https代理
-    runCmd(("networksetup -setsecurewebproxy Wi-Fi 127.0.0.1 " + to_string(port)).c_str());
+    runCmd(("networksetup -setsecurewebproxy Wi-Fi 127.0.0.1 " + to_string(proxyPort)).c_str());
     // 设置socket代理
-    runCmd(("networksetup -setsocksfirewallproxy Wi-Fi 127.0.0.1 " + to_string(port)).c_str());
-    free(str);
+    runCmd(("networksetup -setsocksfirewallproxy Wi-Fi 127.0.0.1 " + to_string(proxyPort)).c_str());
+    free(cmdRes);
+}
+
+void setProxyPort() {
+    char* cmdRes;
+    string cmd = "";
+    for (; proxyPort < 65536; proxyPort++) {
+        cmd = "lsof -i tcp:" + to_string(proxyPort);
+        cmdRes = runCmd(cmd.c_str());
+        if (string(cmdRes).size() > 0) {
+            continue;
+        } else {
+            break;
+        }
+    }
+    cout << "proxyPort: " << proxyPort << endl;
 }

@@ -205,9 +205,6 @@ void HttpUtils::setHeaderKeyValue(HttpHeader* header, string head) {
         } else if (prop.compare("Transfer-Encoding") == 0) {
             header->transferEncoding = new char[val.size() + 1];
             strcpy(header->transferEncoding, val.c_str());
-        } else if (prop.compare("Transfer-Encoding") == 0) {
-            header->transferEncoding = new char[val.size() + 1];
-            strcpy(header->transferEncoding, val.c_str());
         } else if (prop.compare("Trailer") == 0) {
             header->trailer = new char[val.size() + 1];
             strcpy(header->trailer, val.c_str());
@@ -307,8 +304,50 @@ void HttpUtils::reciveBody(SockInfo& sockInfo, int& hasError) {
         boundary += "--";
         boundary += header->boundary;
         boundary += "--\r\n";
-    } else if (header->transferEncoding) {
-        boundary += "0\r\n\r\n";
+        // 当 Content-Type 为 multipart/form-data 的时候，表单数据将由 boundary 分割
+        // 示例
+        // Content-Length: 43022511\r\n
+        // Content-Type:  multipart/form-data; boundary=----WebKitFormBoundary9Z2MtPaeCJ1817FM\r\n
+        // \r\n
+        // ------WebKitFormBoundary9Z2MtPaeCJ1817FM\r\n
+        // Content-Disposition: form-data; name="myname"\r\n
+        // \r\n
+        // 名称1
+        // ------WebKitFormBoundary9Z2MtPaeCJ1817FM\r\n
+        // Content-Disposition: form-data; name="name1"\r\n
+        // \r\n
+        // 名称2
+        // ------WebKitFormBoundary9Z2MtPaeCJ1817FM\r\n
+        // Content-Disposition: form-data; name="nameyfile"; filename="高等数学 第七版 上册 习题全解指南 同济.pdf"\r\n
+        // Content-Type: application/pdf\r\n
+        // \r\n
+        // 这里是编码后的文件数据...
+        // ------WebKitFormBoundary9Z2MtPaeCJ1817FM--\r\n
+    } else if (header->transferEncoding && !strcmp(header->transferEncoding, "chunked")) {
+        // 当传输编码方式为 chunked 时，数据以一系列分块的形式进行发送。 Content-Length 首部在这种情况下不被发送。
+        // 在每一个分块的开头需要添加当前分块的长度，以十六进制的形式表示，后面紧跟着 '\r\n' ，之后是分块本身，后面也是'\r\n' 。
+        // 终止块是一个常规的分块，不同之处在于其长度为 0。终止块后面是一个挂载（trailer），由一系列（或者为空）的实体消息首部构成。
+        // 示例：
+        // HTTP/1.1 200 OK\r\n
+        // Content-Type: text/plain\r\n
+        // Transfer-Encoding: chunked\r\n
+        // Trailer: Expires\r\n
+        // \r\n
+        // 7\r\n
+        // Mozilla\r\n
+        // 9\r\n
+        // Developer\r\n
+        // 7\r\n
+        // Network\r\n
+        // 0\r\n
+        // Expires: Wed, 21 Oct 2015 07:28:00 GMT\r\n
+        // \r\n
+        // 以上示例需要注意：Expires 那一行可能没有也可能后面还有很多其他首部行，具体是由请求头里面的 Trailer 首部决定的
+        if (!header->trailer) { // 没有 trailer 字段
+            boundary += "0\r\n\r\n";
+        } else { // 有 trailer 字段，为了方便起见，这里不对挂载字段做解析，只匹配请求体最后的空行
+            boundary += "\r\n\r\n";
+        }
     }
 
     while (1) {
