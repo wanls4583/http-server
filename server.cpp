@@ -81,8 +81,8 @@ int initServSock() {
     servAddr.sin_addr.s_addr = htonl(INADDR_ANY);
     servAddr.sin_port = htons(proxyPort);
 
-    if (bind(servSock, (struct sockaddr*)&servAddr, sizeof(servAddr)) == -1) {
-        cout << "bind fail" << endl;
+    if (::bind(servSock, (struct sockaddr*)&servAddr, sizeof(servAddr)) == -1) {
+        cout << "bind fail: " << proxyPort << endl;
         return -1;
     }
     
