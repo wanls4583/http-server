@@ -44,7 +44,7 @@ HttpHeader* HttpUtils::getHttpReqHeader(SockInfo& sockInfo) {
     }
 
     if (strcmp(header->method, "CONNECT") == 0) {
-        sockInfo.isRemote = 1;
+        sockInfo.isProxy = 1;
     }
 
     if (header->path) {
@@ -52,7 +52,7 @@ HttpHeader* HttpUtils::getHttpReqHeader(SockInfo& sockInfo) {
         pos = path.find("://");
         header->originPath = copyBuf(header->path);
         if (pos != path.npos) { // 代理模式
-            sockInfo.isRemote = 1;
+            sockInfo.isProxy = 1;
             header->url = copyBuf(header->path);
             path = path.substr(pos + 3);
             pos = path.find('/');
@@ -257,7 +257,11 @@ HttpHeader* HttpUtils::reciveHeader(SockInfo& sockInfo, int& hasError) {
             sockInfo.reqSize = pos + 4;
             sockInfo.head = (char*)calloc(1, sockInfo.reqSize + 1);
             memcpy(sockInfo.head, sockInfo.buf, sockInfo.reqSize);
-            header = this->getHttpReqHeader(sockInfo);
+            if (string(sockInfo.head).find("HTTP") == 0) { // 响应头，HTTP/1.1 200 OK
+                header = this->getHttpResHeader(sockInfo);
+            } else { // 请求头，GET /index.html HTTP/1.1
+                header = this->getHttpReqHeader(sockInfo);
+            }
             sockInfo.header = header;
 
             sockInfo.bufSize -= sockInfo.reqSize;

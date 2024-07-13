@@ -18,7 +18,7 @@ struct SockInfo {
     int originSockFlag;
     int isNoBloack;
     int isNoCheckSSL;
-    int isRemote;
+    int isProxy;
 
     size_t bufSize;
     size_t reqSize;

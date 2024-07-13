@@ -115,7 +115,7 @@ void* initClntSock(void* arg) {
         sockInfo.isNoCheckSSL = 1;
     }
 
-    header = httpUtils.reciveHeader(sockInfo, hasError);
+    header = httpUtils.reciveHeader(sockInfo, hasError); // 读取客户端的请求头
 
     if (hasError) {
         sockContainer.shutdownSock();
@@ -133,7 +133,7 @@ void* initClntSock(void* arg) {
     //     return NULL;
     // }
 
-    httpUtils.reciveBody(sockInfo, hasError);
+    httpUtils.reciveBody(sockInfo, hasError); // 读取客户端的请求体
 
     if (hasError) // 获取请求体失败
     {
@@ -150,7 +150,7 @@ void* initClntSock(void* arg) {
     } else if (httpUtils.checkMethod(sockInfo.header->method)) {
         if (sockInfo.header->port == port && (strcmp(sockInfo.header->hostname, "localhost") == 0 || strcmp(sockInfo.header->hostname, "127.0.0.1") == 0)) { // 本地访问代理设置页面
             httpUtils.sendFile(sockInfo);
-        } else if (sockInfo.isRemote) { // 客户端代理转发请求
+        } else if (sockInfo.isProxy) { // 客户端代理转发请求
             if (!sockInfo.remoteSockInfo) { // 新建远程连接
                 if (!initRemoteSock(sockInfo)) {
                     sockContainer.shutdownSock();
@@ -226,7 +226,7 @@ int initRemoteSock(SockInfo& sockInfo) {
         err = SSL_connect(ssl);
         if (err != 1) {
             int sslErrCode = SSL_get_error(ssl, err);
-            cout << "SSL_connect 调用错误:" << sslErrCode << endl;
+            cout << "SSL_connect fail:" << sslErrCode << endl;
             return 0;
         }
     }
@@ -246,20 +246,20 @@ int forward(SockInfo& sockInfo) { // 转发请求
 
     httpUtils.createReqData(sockInfo, req, reqSize);
 
-    result = httpUtils.writeData(*sockInfo.remoteSockInfo, req, reqSize);
+    result = httpUtils.writeData(*sockInfo.remoteSockInfo, req, reqSize); // 转发客户端请求到远程服务器
 
     if (READ_ERROR == result || READ_END == result) {
         return 0;
     }
 
-    header = httpUtils.reciveHeader(*sockInfo.remoteSockInfo, hasError);
+    header = httpUtils.reciveHeader(*sockInfo.remoteSockInfo, hasError); // 读取远程服务器的响应头
 
     if (hasError) {
         return 0;
     }
 
     if (strcmp(sockInfo.header->method, "HEAD") != 0) { // HEAD请求没有响应体，即使有，也应该丢弃
-        httpUtils.reciveBody(*sockInfo.remoteSockInfo, hasError);
+        httpUtils.reciveBody(*sockInfo.remoteSockInfo, hasError); // 读取远程服务器的响应体
 
         if (hasError) {
             return 0;
@@ -274,7 +274,7 @@ int forward(SockInfo& sockInfo) { // 转发请求
         memcpy(data + remoteSockInfo.reqSize, remoteSockInfo.body, remoteSockInfo.bodySize);
     }
 
-    result = httpUtils.writeData(sockInfo, data, dataSize);
+    result = httpUtils.writeData(sockInfo, data, dataSize); // 将远程服务器返回的数据发送给客户端
     free(data);
 
     if (READ_ERROR == result || READ_END == result) {

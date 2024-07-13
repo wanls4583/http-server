@@ -55,7 +55,7 @@ void SockContainer::resetSockInfo(SockInfo& sockInfo) {
     sockInfo.originSockFlag = 0;
     sockInfo.isNoBloack = 0;
     sockInfo.isNoCheckSSL = 0;
-    sockInfo.isRemote = 0;
+    sockInfo.isProxy = 0;
 
     sockInfo.bufSize = 0;
 
@@ -83,7 +83,7 @@ void SockContainer::resetSockInfoData(SockInfo& sockInfo) {
     sockInfo.reqSize = 0;
     sockInfo.bodySize = 0;
 
-    if (sockInfo.isRemote) { // 远程服务器每次只返回一个响应
+    if (sockInfo.isProxy) { // 远程服务器每次只返回一个响应
         sockInfo.bufSize = 0;
         free(sockInfo.buf);
         sockInfo.buf = NULL;
