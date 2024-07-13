@@ -3,6 +3,7 @@
 
 #include <pthread.h>
 #include "CertUtils.h"
+#include "SockContainer.h"
 
 #define TLS_CONTENT_TYPE_LEN 1
 #define TLS_VERSION_LEN 2
@@ -40,8 +41,8 @@ public:
     TlsUtils();
     unsigned int bufToInt(char *buf, int size);
     char *getServerName(int sock);
-    SSL_CTX *getCert(int sock);
+    SSL_CTX *getCert(SockInfo& sockInfo);
     SSL_CTX *initCert(char *serverName);
-    SSL *getSSL(int sock);
+    SSL *getSSL(SockInfo& sockInfo);
 };
 #endif

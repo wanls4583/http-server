@@ -67,16 +67,23 @@ char* TlsUtils::getServerName(int sock) {
         }
         pos += extLen;
     }
-    
+
     return serverName;
 }
 
-SSL_CTX* TlsUtils::getCert(int sock) {
+SSL_CTX* TlsUtils::getCert(SockInfo& sockInfo) {
     pthread_mutex_lock(&certMutex);
-    char* serverName = this->getServerName(sock);
-    if (!serverName) {
-        serverName = new char[string("127.0.0.1").size() + 1];
-        strcpy(serverName, "127.0.0.1");
+    char* serverName = NULL;
+
+    if (sockInfo.header && sockInfo.header->hostname) { // 对于代理请求，首次的 CONNECT 请求已经携带了主机名
+        serverName = new char[string(sockInfo.header->hostname).size() + 1];
+        strcpy(serverName, sockInfo.header->hostname);
+    } else {
+        serverName = this->getServerName(sockInfo.sock);
+        if (!serverName) {
+            serverName = new char[string("127.0.0.1").size() + 1];
+            strcpy(serverName, "127.0.0.1");
+        }
     }
 
     ServerMap* head = this->ctxHead;
@@ -166,11 +173,11 @@ SSL_CTX* TlsUtils::initCert(char* serverName) {
     return ctx;
 }
 
-SSL* TlsUtils::getSSL(int sock) {
+SSL* TlsUtils::getSSL(SockInfo& sockInfo) {
     char buf[2];
     SSL* ssl = NULL;
     SSL_CTX* ctx = NULL;
-    ctx = this->getCert(sock);
+    ctx = this->getCert(sockInfo);
     if (!ctx) {
         return NULL;
     }
@@ -178,7 +185,7 @@ SSL* TlsUtils::getSSL(int sock) {
     int err;
     char* str;
     ssl = SSL_new(ctx);
-    SSL_set_fd(ssl, sock);
+    SSL_set_fd(ssl, sockInfo.sock);
     err = SSL_accept(ssl);
     // printf("SSL connection using %s\n", SSL_get_cipher(ssl)); // TLS_AES_128_GCM_SHA256
     return ssl;

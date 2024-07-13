@@ -119,10 +119,11 @@ void* initClntSock(void* arg) {
 
         if (httpUtils.isClntHello(sockInfo)) {
             sockContainer.setNoBlock(sockInfo, 0); // ssl握手需要在阻塞模式下
-            ssl = sockInfo.ssl = tlsUtil.getSSL(sock);
+            ssl = sockInfo.ssl = tlsUtil.getSSL(sockInfo);
             sockContainer.setNoBlock(sockInfo, 1); // 设置成非阻塞模式
         }
 
+        sockContainer.resetSockInfoData(sockInfo); // 清除掉 CONNECT 请求的数据
         sockInfo.isNoCheckSSL = 1;
     }
 
@@ -155,7 +156,6 @@ void* initClntSock(void* arg) {
     if (strcmp(header->method, "CONNECT") == 0) // 客户端https代理连接请求
     {
         httpUtils.sendTunnelOk(sockInfo);
-        sockContainer.resetSockInfoData(sockInfo);
         sockInfo.isNoCheckSSL = 0; // CONNECT请求使用的是http协议，用来为https的代理建立连接，下一次请求才是真正的tls握手请求
         initClntSock(arg);
     } else if (httpUtils.checkMethod(sockInfo.header->method)) {
