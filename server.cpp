@@ -221,6 +221,7 @@ int initRemoteSock(SockInfo& sockInfo) {
         SSL* ssl = SSL_new(ctx);
         sockInfo.remoteSockInfo->ssl = ssl;
         SSL_set_fd(ssl, remoteSock);
+        // 将主机名称写入 ClientHello 消息中的 ServerName 扩展字段中，有些服务器建立 TLS 连接时可能会校验该字段
         SSL_set_tlsext_host_name(ssl, sockInfo.header->hostname);
 
         err = SSL_connect(ssl);
@@ -286,7 +287,7 @@ int forward(SockInfo& sockInfo) { // 转发请求
 
 void addRootCert() {
     char cmd[200];
-    char* cn = tlsUtil.certUtils.getRootCertNameByOid((char *)"2.5.4.3");
+    char* cn = tlsUtil.certUtils.getRootCertNameByOid((char*)"2.5.4.3");
     strcat(cmd, "security find-certificate -c ");
     strcat(cmd, cn);
     char* str = runCmd(cmd);
