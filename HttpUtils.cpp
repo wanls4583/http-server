@@ -39,11 +39,11 @@ HttpHeader* HttpUtils::getHttpReqHeader(SockInfo& sockInfo) {
 
     this->setHeaderKeyValue(header, head);
 
-    if (!header->port) {
+    if (!header->port) { // 如果 host 首部没有携带端口，证明其是用默认端口
         header->port = sockInfo.ssl ? 443 : 80;
     }
 
-    if (strcmp(header->method, "CONNECT") == 0) {
+    if (strcmp(header->method, "CONNECT") == 0) { //例：CONNECT lp.open.weixin.qq.com:443 HTTP/1.1
         sockInfo.isProxy = 1;
     }
 
@@ -51,7 +51,20 @@ HttpHeader* HttpUtils::getHttpReqHeader(SockInfo& sockInfo) {
         string path = header->path;
         pos = path.find("://");
         header->originPath = copyBuf(header->path);
-        if (pos != path.npos) { // 代理模式
+        if (header->path[0] == '/') { 
+            // 服务器模式或者 https 代理请求。https 请求代理会先发送 CONNECT 请求，所以请求路径不会带协议头。例：
+            // GET /common/csdn-toolbar/images/wx-pay.svg HTTP/1.1
+            string url = sockInfo.ssl ? "https://" : "http://";
+            url += header->hostname;
+            url += ":";
+            url += to_string(header->port);
+            url += header->path;
+            header->url = new char[url.size() + 1];
+            strcpy(header->url, url.c_str());
+        } else if (pos != path.npos && pos <= 4 ) { 
+            // http 代理请求。例：
+            // GET http://121.196.45.222:2401/name/sysdate HTTP/1.1
+            // GET http://www.leiyang.gov.cn/front/ui/jquery/jquery.js HTTP/1.1
             sockInfo.isProxy = 1;
             header->url = copyBuf(header->path);
             path = path.substr(pos + 3);
@@ -61,14 +74,6 @@ HttpHeader* HttpUtils::getHttpReqHeader(SockInfo& sockInfo) {
             }
             free(header->path);
             header->path = copyBuf(path.c_str());
-        } else if (header->path[0] == '/') { // 服务器模式
-            string url = sockInfo.ssl ? "https://" : "http://";
-            url += header->hostname;
-            url += ":";
-            url += to_string(header->port);
-            url += header->path;
-            header->url = new char[url.size() + 1];
-            strcpy(header->url, url.c_str());
         }
     }
 

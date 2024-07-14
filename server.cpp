@@ -159,7 +159,7 @@ void* initClntSock(void* arg) {
         sockInfo.isNoCheckSSL = 0; // CONNECT请求使用的是http协议，用来为https的代理建立连接，下一次请求才是真正的tls握手请求
         initClntSock(arg);
     } else if (httpUtils.checkMethod(sockInfo.header->method)) {
-        if (sockInfo.header->port == proxyPort && (strcmp(sockInfo.header->hostname, "localhost") == 0 || strcmp(sockInfo.header->hostname, "127.0.0.1") == 0)) { // 本地访问代理设置页面
+        if (sockInfo.header->port == proxyPort) { // 本地访问代理设置页面
             httpUtils.sendFile(sockInfo);
         } else if (sockInfo.isProxy) { // 客户端代理转发请求
             if (!sockInfo.remoteSockInfo) { // 新建远程连接
@@ -216,7 +216,7 @@ int initRemoteSock(SockInfo& sockInfo) {
 
     int err = connect(remoteSock, (struct sockaddr*)&remoteAddr, sizeof(remoteAddr));
     if (err != 0) {
-        cout << "connect fail:" << err << endl;
+        cout << "connect fail:" << sockInfo.header->hostname << endl;
         return 0;
     }
 
