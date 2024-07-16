@@ -10,6 +10,7 @@
 #include <openssl/err.h>
 #include <openssl/bio.h>
 #include <pthread.h>
+#include "regex.h"
 #include "utils.h"
 #include "TlsUtils.h"
 #include "HttpUtils.h"
@@ -31,8 +32,11 @@ int initRemoteSock(SockInfo& sockInfo);
 int forward(SockInfo& sockInfo);
 void setProxyPort();
 void addRootCert();
+void testReg();
 
 int main() {
+    // testReg();
+    // return 0;
     setProxyPort();
     addRootCert();
     signal(SIGPIPE, SIG_IGN); // 屏蔽SIGPIPE信号，防止进程退出
@@ -85,7 +89,7 @@ int initServSock() {
         cout << "bind fail: " << proxyPort << endl;
         return -1;
     }
-    
+
     if (listen(servSock, 10) == -1) {
         cout << "listen fail" << endl;
         return -2;
@@ -325,4 +329,35 @@ void setProxyPort() {
         }
     }
     cout << "proxyPort: " << proxyPort << endl;
+}
+
+void testReg() {
+    regex_t* r = (regex_t*)malloc(sizeof(regex_t)); //分配编译后模式的存储空间
+    char* text = (char*)"asdfsddb"; //目标文本
+    char* regtxt = (char*)"a[[:alpha:]]+b"; //模式
+    int status = regcomp(r, regtxt, REG_EXTENDED); //编译模式
+    if (status) { //处理可能的错误
+        char error_message[1000];
+        regerror(status, r, error_message, 1000);
+        printf("Regex error compiling '%s': %s\n", text, error_message);
+        return;
+    }
+    size_t nmatch = 3; //保存结果，每次匹配有两组$&，$1结果，分别是整体与子匹配
+    regmatch_t m[nmatch];
+    char* p = text;
+    while (1) { //连续匹配直到行尾
+        status = regexec(r, p, nmatch, m, 0); //匹配操作
+        if (status == REG_NOMATCH) { //判断结束或错误
+            char error_message[1000];
+            regerror(status, r, error_message, 1000);
+            printf("Regex Match Error '%s': %s\n", text, error_message);
+            break;
+        }
+        int i;
+        for (i = 0; i < nmatch; i++) {  //打印结果，注意regmatch_t中保存的偏移信息
+            printf("%.*s, so = %d, eo = %d\n", int(m[i].rm_eo - m[i].rm_so), p + m[i].rm_so, (int)m[i].rm_so, (int)m[i].rm_eo);
+        }
+        p += m[0].rm_eo;
+    }
+    regfree(r);
 }
