@@ -51,7 +51,7 @@ HttpHeader* HttpUtils::getHttpReqHeader(SockInfo& sockInfo) {
         string path = header->path;
         pos = path.find("://");
         header->originPath = copyBuf(header->path);
-        if (header->path[0] == '/') { 
+        if (header->path[0] == '/') {
             // 服务器模式或者 https 代理请求。https 请求代理会先发送 CONNECT 请求，所以请求路径不会带协议头。例：
             // GET /common/csdn-toolbar/images/wx-pay.svg HTTP/1.1
             string url = sockInfo.ssl ? "https://" : "http://";
@@ -61,7 +61,7 @@ HttpHeader* HttpUtils::getHttpReqHeader(SockInfo& sockInfo) {
             url += header->path;
             header->url = new char[url.size() + 1];
             strcpy(header->url, url.c_str());
-        } else if (pos != path.npos && pos <= 4 ) { 
+        } else if (pos != path.npos && pos <= 4) {
             // http 代理请求。例：
             // GET http://121.196.45.222:2401/name/sysdate HTTP/1.1
             // GET http://www.leiyang.gov.cn/front/ui/jquery/jquery.js HTTP/1.1
@@ -213,8 +213,39 @@ void HttpUtils::setHeaderKeyValue(HttpHeader* header, string head) {
         } else if (prop.compare("Trailer") == 0) {
             header->trailer = new char[val.size() + 1];
             strcpy(header->trailer, val.c_str());
+        } else if (prop.compare("Upgrade") == 0) {
+            header->upgrade = new char[val.size() + 1];
+            strcpy(header->upgrade, val.c_str());
+        } else if (prop.compare("Sec-WebSocket-Key") == 0) {
+            header->secWebSocketKey = new char[val.size() + 1];
+            strcpy(header->secWebSocketKey, val.c_str());
         }
     }
+}
+
+char* HttpUtils::getSecWebSocketAccept(SockInfo& sockInfo) {
+    char* result = NULL;
+    if (sockInfo.header->secWebSocketKey) {
+        digest_ctx ctx;
+        string input = "";
+        string suffix = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+        // input += "w4v7O6xFTi36lq3RNcgctw==";
+        input += sockInfo.header->secWebSocketKey;
+        input += suffix;
+
+        new_sha1_digest(&ctx);
+        digest_hash(&ctx, (u8*)input.c_str(), input.size());
+
+        int base64Size = ctx.result_size * 6 / 4 + 3;
+        result = (char*)malloc(base64Size);
+        memset(result, 0, base64Size);
+        base64_encode((unsigned char*)ctx.hash, ctx.result_size, (unsigned char*)result);
+        // Oy4NRAQ13jhfONC7bP8dTKb4PTU=
+        // cout << "Sec-WebSocket-Accept: " << result << endl;
+
+        free_digest(&ctx);
+    }
+    return result;
 }
 
 int HttpUtils::isClntHello(SockInfo& sockInfo) {
@@ -538,6 +569,21 @@ ssize_t HttpUtils::sendTunnelOk(SockInfo& sockInfo) {
     return write(sockInfo.sock, s.c_str(), s.length());
 }
 
+ssize_t HttpUtils::sendUpgradeOk(SockInfo& sockInfo) {
+    char* secWebSocketAccept = getSecWebSocketAccept(sockInfo);
+    string s = "HTTP/1.1 101 Switching Protocols\r\rUpgrade: websocket\r\nConnection: Upgrade\r\n";
+
+    if (secWebSocketAccept) {
+        s += "Sec-WebSocket-Accept: ";
+        s += secWebSocketAccept;
+        s += "\r\n";
+    }
+
+    s += "\r\n";
+
+    return write(sockInfo.sock, s.c_str(), s.length());
+}
+
 int HttpUtils::sendFile(SockInfo& sockInfo) {
     string fName = sockInfo.header->path;
     if (fName.length()) {
@@ -556,7 +602,7 @@ int HttpUtils::sendFile(SockInfo& sockInfo) {
             char* data = readFile(inFile, len);
 
             head += "Content-Type: " + type + "\r\n";
-            if (strcmp(sockInfo.header->connnection, "close") == 0) {
+            if (sockInfo.header->connnection && strcmp(sockInfo.header->connnection, "close") == 0) {
                 head += "Connection: close\r\n";
             } else {
                 head += "Connection: keep-alive\r\n";

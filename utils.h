@@ -3,6 +3,10 @@
 #include <iostream>
 #include <sstream>
 #include <fstream>
+#include "utils/md5.h"
+#include "utils/sha.h"
+#include "utils/digest.h"
+#include "utils/base64.h"
 
 using namespace std;
 

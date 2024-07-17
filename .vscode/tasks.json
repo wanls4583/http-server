@@ -12,6 +12,7 @@
                 "-g",
                 // "${file}", //当前活动的文件
                 "${fileDirname}/*.cpp",
+                "${fileDirname}/utils/*.c",
                 "-o",
                 "${fileDirname}/build/${fileBasenameNoExtension}",
                 "-lssl",

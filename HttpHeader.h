@@ -22,6 +22,8 @@ typedef struct HttpHeader
     char *transferEncoding;
     char *trailer;
     char *reason;
+    char *upgrade;
+    char *secWebSocketKey;
     size_t contentLenth;
     int port;
     int status;

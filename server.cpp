@@ -34,7 +34,7 @@ void addRootCert();
 
 int main() {
     setProxyPort();
-    addRootCert();
+    // addRootCert();
     signal(SIGPIPE, SIG_IGN); // 屏蔽SIGPIPE信号，防止进程退出
     pthread_key_create(&ptKey, NULL);
     servSock = initServSock();
@@ -160,7 +160,12 @@ void* initClntSock(void* arg) {
         initClntSock(arg);
     } else if (httpUtils.checkMethod(sockInfo.header->method)) {
         if (sockInfo.header->port == proxyPort) { // 本地访问代理设置页面
-            httpUtils.sendFile(sockInfo);
+            if (sockInfo.header->connnection && sockInfo.header->upgrade &&
+                !strcmp(sockInfo.header->connnection, "Upgrade") && !strcmp(sockInfo.header->upgrade, "websocket") ) {
+                httpUtils.sendUpgradeOk(sockInfo);
+            } else {
+                httpUtils.sendFile(sockInfo);
+            }
         } else if (sockInfo.isProxy) { // 客户端代理转发请求
             if (!sockInfo.remoteSockInfo) { // 新建远程连接
                 if (!initRemoteSock(sockInfo)) {

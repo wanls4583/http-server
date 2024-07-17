@@ -27,6 +27,7 @@ private:
 public:
     HttpUtils();
     ~HttpUtils();
+    char* getSecWebSocketAccept(SockInfo& sockInfo);
     int checkMethod(const char* method);
     int isClntHello(SockInfo& sockInfo);
     void reciveBody(SockInfo& sockInfo, int& hasError);
@@ -35,6 +36,7 @@ public:
     HttpHeader* reciveHeader(SockInfo& sockInfo, int& hasError);
     ssize_t writeData(SockInfo& sockInfo, char* buf, size_t length);
     ssize_t sendTunnelOk(SockInfo& sockInfo);
+    ssize_t sendUpgradeOk(SockInfo& sockInfo);
     ssize_t send404(SockInfo& sockInfo);
     int sendFile(SockInfo& sockInfo);
     string getType(string fName);
