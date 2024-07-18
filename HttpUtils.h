@@ -20,8 +20,7 @@ private:
     void checkError(SockInfo& sockInfo, ssize_t bufSize, int& endTryTimes, int& loop, int& hasError);
     HttpHeader* getHttpReqHeader(SockInfo& sockInfo);
     HttpHeader* getHttpResHeader(SockInfo& sockInfo);
-    ssize_t reciveHttpData(SockInfo& sockInfo);
-    ssize_t recvData(SockInfo& sockInfo, char* buf, size_t length);
+    ssize_t preReadData(SockInfo& sockInfo, char* buf, size_t length);
     ssize_t readData(SockInfo& sockInfo, char* buf, size_t length);
     ssize_t getSockErr(SockInfo& sockInfo, ssize_t err);
 public:
@@ -34,6 +33,7 @@ public:
     void reciveTlsHeader(SockInfo& sockInfo, int& hasError);
     void createReqData(SockInfo& sockInfo, char*& req, size_t& reqSize);
     HttpHeader* reciveHeader(SockInfo& sockInfo, int& hasError);
+    ssize_t reciveData(SockInfo& sockInfo);
     ssize_t writeData(SockInfo& sockInfo, char* buf, size_t length);
     ssize_t sendTunnelOk(SockInfo& sockInfo);
     ssize_t sendUpgradeOk(SockInfo& sockInfo);

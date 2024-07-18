@@ -261,7 +261,7 @@ void HttpUtils::reciveTlsHeader(SockInfo& sockInfo, int& hasError) {
     int len = 6, endTryTimes = 0, loop = 0;
     char* buf = (char*)calloc(1, len);
     while (count < len) {
-        bufSize = this->recvData(sockInfo, buf + count, len - count);
+        bufSize = this->preReadData(sockInfo, buf + count, len - count);
 
         checkError(sockInfo, bufSize, endTryTimes, loop, hasError);
 
@@ -314,7 +314,7 @@ HttpHeader* HttpUtils::reciveHeader(SockInfo& sockInfo, int& hasError) {
             break;
         }
 
-        bufSize = this->reciveHttpData(sockInfo);
+        bufSize = this->reciveData(sockInfo);
 
         checkError(sockInfo, bufSize, endTryTimes, loop, hasError);
 
@@ -415,7 +415,7 @@ void HttpUtils::reciveBody(SockInfo& sockInfo, int& hasError) {
         }
 
         preSize = sockInfo.bufSize;
-        bufSize = this->reciveHttpData(sockInfo);
+        bufSize = this->reciveData(sockInfo);
 
         checkError(sockInfo, bufSize, endTryTimes, loop, hasError);
 
@@ -441,7 +441,7 @@ void HttpUtils::reciveBody(SockInfo& sockInfo, int& hasError) {
     }
 }
 
-ssize_t HttpUtils::reciveHttpData(SockInfo& sockInfo) {
+ssize_t HttpUtils::reciveData(SockInfo& sockInfo) {
     char buf[1024 * 10];
     ssize_t bufSize = this->readData(sockInfo, buf, sizeof(buf));
 
@@ -455,7 +455,7 @@ ssize_t HttpUtils::reciveHttpData(SockInfo& sockInfo) {
 }
 
 // 该方法查看流中的数据，但不会将数据从流中删除
-ssize_t HttpUtils::recvData(SockInfo& sockInfo, char* buf, size_t length) {
+ssize_t HttpUtils::preReadData(SockInfo& sockInfo, char* buf, size_t length) {
     ssize_t err;
     ssize_t result;
 

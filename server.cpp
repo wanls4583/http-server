@@ -29,6 +29,7 @@ int initServSock();
 void* initClntSock(void* arg);
 int initRemoteSock(SockInfo& sockInfo);
 int forward(SockInfo& sockInfo);
+int initWebscoket(SockInfo& sockInfo);
 void setProxyPort();
 void addRootCert();
 
@@ -85,7 +86,7 @@ int initServSock() {
         cout << "bind fail: " << proxyPort << endl;
         return -1;
     }
-    
+
     if (listen(servSock, 10) == -1) {
         cout << "listen fail" << endl;
         return -2;
@@ -161,8 +162,9 @@ void* initClntSock(void* arg) {
     } else if (httpUtils.checkMethod(sockInfo.header->method)) {
         if (sockInfo.header->port == proxyPort) { // 本地访问代理设置页面
             if (sockInfo.header->connnection && sockInfo.header->upgrade &&
-                !strcmp(sockInfo.header->connnection, "Upgrade") && !strcmp(sockInfo.header->upgrade, "websocket") ) {
+                !strcmp(sockInfo.header->connnection, "Upgrade") && !strcmp(sockInfo.header->upgrade, "websocket")) {
                 httpUtils.sendUpgradeOk(sockInfo);
+                initWebscoket(sockInfo);
             } else {
                 httpUtils.sendFile(sockInfo);
             }
@@ -299,6 +301,12 @@ int forward(SockInfo& sockInfo) { // 转发请求
     }
 
     return 1;
+}
+
+int initWebscoket(SockInfo& sockInfo) {
+    int bufSize = httpUtils.reciveData(sockInfo);
+
+    return 0;
 }
 
 void addRootCert() {
