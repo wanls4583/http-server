@@ -1,6 +1,7 @@
 #include "HttpUtils.h"
 
 extern SockContainer sockContainer;
+extern WsUtils wsUtils;
 
 HttpUtils::HttpUtils() {
     this->cpuTime = 1000; // 1毫秒
@@ -320,9 +321,6 @@ HttpHeader* HttpUtils::reciveHeader(SockInfo& sockInfo, int& hasError) {
 
         if (hasError) {
             break;
-        } else if (loop) {
-            loop = 0;
-            continue;
         }
     }
 
@@ -421,9 +419,6 @@ void HttpUtils::reciveBody(SockInfo& sockInfo, int& hasError) {
 
         if (hasError) {
             break;
-        } else if (loop) {
-            loop = 0;
-            continue;
         }
     }
 
@@ -432,6 +427,56 @@ void HttpUtils::reciveBody(SockInfo& sockInfo, int& hasError) {
         if (sockInfo.bufSize) {
             char* buf = (char*)calloc(1, sockInfo.bufSize + 1);
             memcpy(buf, sockInfo.buf + sockInfo.bodySize, sockInfo.bufSize);
+            free(sockInfo.buf);
+            sockInfo.buf = buf;
+        } else {
+            free(sockInfo.buf);
+            sockInfo.buf = NULL;
+        }
+    }
+}
+
+void HttpUtils::reciveWsFragment(SockInfo& sockInfo, int& hasError) {
+    ssize_t bufSize = sockInfo.bufSize;
+    WsFragment* fragment = NULL;
+    int endTryTimes = 0, loop = 0;
+
+    while (1) {
+        if (sockInfo.bufSize) {
+            fragment = wsUtils.parseFragment(sockInfo);
+            if (fragment) {
+                if (sockInfo.wsFragment) { // 上次的祯是一个续祯
+                    WsFragment* node = sockInfo.wsFragment;
+                    while (node->next) {
+                        node = node->next;
+                    }
+                    node->next = fragment;
+                } else {
+                    sockInfo.wsFragment = fragment;
+                }
+                break;
+            }
+        }
+
+        if (sockInfo.bufSize > MAX_BODY_SIZE) { // 请求体超出限制
+            bufSize = READ_ERROR;
+            break;
+        }
+
+        bufSize = this->reciveData(sockInfo);
+
+        checkError(sockInfo, bufSize, endTryTimes, loop, hasError);
+
+        if (hasError) {
+            break;
+        }
+    }
+
+    if (!hasError && fragment) {
+        sockInfo.bufSize -= fragment->fragmentSize;
+        if (sockInfo.bufSize) {
+            char* buf = (char*)calloc(1, sockInfo.bufSize + 1);
+            memcpy(buf, sockInfo.buf + fragment->fragmentSize, sockInfo.bufSize);
             free(sockInfo.buf);
             sockInfo.buf = buf;
         } else {

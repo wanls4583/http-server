@@ -5,6 +5,7 @@
 #include <climits>
 #include <sys/stat.h>
 #include "SockContainer.h"
+#include "WsUtils.h"
 #include "utils.h"
 
 using namespace std;
@@ -30,6 +31,7 @@ public:
     int checkMethod(const char* method);
     int isClntHello(SockInfo& sockInfo);
     void reciveBody(SockInfo& sockInfo, int& hasError);
+    void reciveWsFragment(SockInfo& sockInfo, int& hasError);
     void reciveTlsHeader(SockInfo& sockInfo, int& hasError);
     void createReqData(SockInfo& sockInfo, char*& req, size_t& reqSize);
     HttpHeader* reciveHeader(SockInfo& sockInfo, int& hasError);

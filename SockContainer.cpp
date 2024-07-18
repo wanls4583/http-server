@@ -2,6 +2,7 @@
 
 using namespace std;
 
+extern WsUtils wsUtils;
 extern pthread_key_t ptKey;
 
 SockContainer::SockContainer(): timeout(60) {
@@ -63,6 +64,8 @@ void SockContainer::resetSockInfo(SockInfo& sockInfo) {
     sockInfo.ip = NULL;
     free(sockInfo.buf);
     sockInfo.buf = NULL;
+    wsUtils.freeFragment(sockInfo.wsFragment);
+    sockInfo.wsFragment = NULL;
 
     sockInfo.tv.tv_sec = 0;
     sockInfo.tv.tv_usec = 0;
@@ -83,7 +86,7 @@ void SockContainer::resetSockInfoData(SockInfo& sockInfo) {
     sockInfo.reqSize = 0;
     sockInfo.bodySize = 0;
 
-    if (sockInfo.isProxy) { // 远程服务器每次只返回一个响应
+    if (sockInfo.isProxy) { // 远程服务器每次只返回一个响应，所以可清空还未处理的数据
         sockInfo.bufSize = 0;
         free(sockInfo.buf);
         sockInfo.buf = NULL;
@@ -95,6 +98,8 @@ void SockContainer::resetSockInfoData(SockInfo& sockInfo) {
     sockInfo.head = NULL;
     free(sockInfo.body);
     sockInfo.body = NULL;
+    wsUtils.freeFragment(sockInfo.wsFragment);
+    sockInfo.wsFragment = NULL;
 }
 
 void SockContainer::initSockInfos() {

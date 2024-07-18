@@ -13,6 +13,7 @@
 #include "utils.h"
 #include "TlsUtils.h"
 #include "HttpUtils.h"
+#include "SockContainer.h"
 
 using namespace std;
 
@@ -23,6 +24,7 @@ static struct sockaddr_in servAddr;
 SockContainer sockContainer;
 TlsUtils tlsUtil;
 HttpUtils httpUtils;
+WsUtils wsUtils;
 pthread_key_t ptKey;
 
 int initServSock();
@@ -304,7 +306,21 @@ int forward(SockInfo& sockInfo) { // 转发请求
 }
 
 int initWebscoket(SockInfo& sockInfo) {
-    int bufSize = httpUtils.reciveData(sockInfo);
+    int hasError = 0;
+    while (1) {
+        httpUtils.reciveWsFragment(sockInfo, hasError);
+        if (hasError) {
+            break;
+        }
+        if (sockInfo.wsFragment) {
+            if (wsUtils.fragmentComplete(sockInfo.wsFragment)) { // 消息接收完整
+                unsigned char* msg = wsUtils.getMsg(sockInfo.wsFragment);
+                wsUtils.freeFragment(sockInfo.wsFragment);
+                sockInfo.wsFragment = NULL;
+                cout << msg << endl;
+            }
+        }
+    }
 
     return 0;
 }

@@ -3,6 +3,7 @@
 #include <iostream>
 #include <sstream>
 #include <fstream>
+#include "utils/hex.h"
 #include "utils/md5.h"
 #include "utils/sha.h"
 #include "utils/digest.h"
