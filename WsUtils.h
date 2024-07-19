@@ -10,5 +10,6 @@ public:
     int fragmentComplete(WsFragment* fragment);
     u_int64_t getMsgLength(WsFragment* fragment);
     unsigned char* getMsg(WsFragment* fragment);
+    unsigned char* createMsg(WsFragment* fragment);
 };
 #endif

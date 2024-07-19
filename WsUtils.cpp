@@ -82,6 +82,70 @@ WsFragment* WsUtils::parseFragment(SockInfo& sockInfo) {
     return fragment;
 }
 
+unsigned char* WsUtils::createMsg(WsFragment* fragment) {
+    unsigned char* msg = NULL;
+    int index = 0;
+    u_int64_t dataLen = fragment->dataLen2 ? fragment->dataLen2 : fragment->dataLen;
+    u_int64_t fragmentSize = dataLen + 2;
+
+    if (dataLen > 65535) {
+        fragmentSize += 8;
+    } else if (dataLen > 125) {
+        fragmentSize += 2;
+    }
+
+    if (fragment->mask) {
+        fragmentSize += 4;
+    }
+
+    fragment->fragmentSize = fragmentSize;
+    msg = (unsigned char*)calloc(fragmentSize + 1, 1);
+
+    if (fragment->fin) {
+        msg[index] |= 0x80;
+    }
+
+    if (fragment->rsv) {
+        msg[index] |= (fragment->rsv << 4);
+    }
+
+    msg[index] |= fragment->opCode;
+    index++;
+
+    if (fragment->mask) {
+        msg[index] |= 0x80;
+    }
+
+    if (dataLen > 65535) {
+        msg[index++] |= 0x7f;
+        unsigned short len = htons(dataLen);
+        memcpy(msg + index, &len, 2);
+        index += 2;
+    } else if (dataLen > 125) {
+        msg[index++] |= 0x7e;
+        msg[index] = (dataLen >> 56) & 0xff;
+        msg[index + 1] = (dataLen >> 48) & 0xff;
+        msg[index + 2] = (dataLen >> 40) & 0xff;
+        msg[index + 3] = (dataLen >> 32) & 0xff;
+        msg[index + 4] = (dataLen >> 24) & 0xff;
+        msg[index + 5] = (dataLen >> 16) & 0xff;
+        msg[index + 6] = (dataLen >> 8) & 0xff;
+        msg[index + 7] = (dataLen) & 0xff;
+        index += 8;
+    } else {
+        msg[index++] |= dataLen;
+    }
+
+    if (fragment->mask) {
+        memcpy(msg + index, fragment->maskKey, 4);
+        index += 4;
+    }
+
+    memcpy(msg + index, fragment->data, dataLen);
+
+    return msg;
+}
+
 void WsUtils::freeFragment(WsFragment* fragment) {
     if (!fragment) {
         return;

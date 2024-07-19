@@ -318,6 +318,17 @@ int initWebscoket(SockInfo& sockInfo) {
                 wsUtils.freeFragment(sockInfo.wsFragment);
                 sockInfo.wsFragment = NULL;
                 cout << msg << endl;
+
+                WsFragment* fragment = (WsFragment*)calloc(sizeof(WsFragment), 1);
+                unsigned char* reply = (unsigned char*)calloc(strlen("Hello Client!"), 1);
+                memcpy(reply, "Hello Client!", strlen("Hello Client!"));
+                fragment->fin = 1;
+                fragment->dataLen2 = strlen((char*)reply);
+                fragment->data = reply;
+                fragment->opCode = 1;
+                reply = wsUtils.createMsg(fragment);
+                httpUtils.writeData(sockInfo, (char*)reply, fragment->fragmentSize);
+                wsUtils.freeFragment(fragment);
             }
         }
     }
