@@ -47,9 +47,14 @@ void SockContainer::resetSockInfo(SockInfo& sockInfo) {
         sockInfo.remoteSockInfo = NULL;
     }
 
+    if (sockInfo.header) {
+        this->freeHeader(sockInfo.header);
+    }
+
     this->resetSockInfoData(sockInfo);
 
     sockInfo.ssl = NULL;
+    sockInfo.localSockInfo = NULL;
 
     sockInfo.sock = -1;
     sockInfo.closing = 0;
@@ -70,6 +75,7 @@ void SockContainer::resetSockInfo(SockInfo& sockInfo) {
     sockInfo.tv.tv_sec = 0;
     sockInfo.tv.tv_usec = 0;
     sockInfo.tid = NULL;
+    sockInfo.wsTid = NULL;
     pthread_mutex_unlock(&sockContainerMutex);
 }
 
@@ -138,9 +144,11 @@ void SockContainer::shutdownSock(SockInfo* sockInfo) {
     }
     this->closeSock(*sockInfo);
     pthread_t tid = sockInfo->tid;
+    pthread_t wsTid = sockInfo->wsTid;
     pthread_mutex_unlock(&shutdownMutex);
     this->resetSockInfo(*sockInfo);
     pthread_cancel(tid);
+    pthread_cancel(wsTid);
 }
 
 void SockContainer::closeSock(SockInfo& sockInfo) {

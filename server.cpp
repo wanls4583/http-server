@@ -31,6 +31,7 @@ int initServSock();
 void* initClntSock(void* arg);
 int initRemoteSock(SockInfo& sockInfo);
 int forward(SockInfo& sockInfo);
+void* forwardWebocket(void* arg);
 int initWebscoket(SockInfo& sockInfo);
 void setProxyPort();
 void addRootCert();
@@ -232,6 +233,7 @@ int initRemoteSock(SockInfo& sockInfo) {
     sockInfo.remoteSockInfo = (SockInfo*)calloc(1, sizeof(SockInfo));
     sockContainer.resetSockInfo(*sockInfo.remoteSockInfo);
     sockInfo.remoteSockInfo->sock = remoteSock;
+    sockInfo.remoteSockInfo->localSockInfo = &sockInfo;
 
     if (sockInfo.header->port == 443) {
         // SSL_load_error_strings();
@@ -257,7 +259,38 @@ int initRemoteSock(SockInfo& sockInfo) {
     return 1;
 }
 
-int forward(SockInfo& sockInfo) { // 转发请求
+int initWebscoket(SockInfo& sockInfo) {
+    int hasError = 0;
+    while (1) {
+        httpUtils.reciveWsFragment(sockInfo, hasError);
+        if (hasError) {
+            break;
+        }
+        if (sockInfo.wsFragment) {
+            if (wsUtils.fragmentComplete(sockInfo.wsFragment)) { // 消息接收完整
+                unsigned char* msg = wsUtils.getMsg(sockInfo.wsFragment);
+                wsUtils.freeFragment(sockInfo.wsFragment);
+                sockInfo.wsFragment = NULL;
+                cout << msg << endl;
+
+                WsFragment* fragment = (WsFragment*)calloc(sizeof(WsFragment), 1);
+                unsigned char* reply = (unsigned char*)calloc(strlen("Hello Client!"), 1);
+                memcpy(reply, "Hello Client!", strlen("Hello Client!"));
+                fragment->fin = 1;
+                fragment->dataLen2 = strlen((char*)reply);
+                fragment->data = reply;
+                fragment->opCode = 1;
+                reply = wsUtils.createMsg(fragment);
+                httpUtils.writeData(sockInfo, (char*)reply, fragment->fragmentSize);
+                wsUtils.freeFragment(fragment);
+            }
+        }
+    }
+
+    return 0;
+}
+
+int forward(SockInfo& sockInfo) { // 转发http/https请求
     SockInfo& remoteSockInfo = *sockInfo.remoteSockInfo;
     HttpHeader* header = NULL;
     char* req = NULL;
@@ -302,38 +335,36 @@ int forward(SockInfo& sockInfo) { // 转发请求
         return 0;
     }
 
+    if (header->status == 101 && strcmp(header->upgrade, "websocket") == 0) { // webscoket连接成功
+        pthread_t localTid, remoteTid;
+        sockInfo.wsTid = localTid;
+        sockInfo.remoteSockInfo->wsTid = remoteTid;
+        pthread_create(&localTid, NULL, forwardWebocket, &sockInfo);
+        pthread_detach(localTid);
+        pthread_create(&remoteTid, NULL, forwardWebocket, sockInfo.remoteSockInfo);
+        pthread_detach(remoteTid);
+    }
+
     return 1;
 }
 
-int initWebscoket(SockInfo& sockInfo) {
+void* forwardWebocket(void* arg) { // 转发webscoket请求
+    SockInfo& sockInfo = *((SockInfo*)arg);
     int hasError = 0;
     while (1) {
         httpUtils.reciveWsFragment(sockInfo, hasError);
         if (hasError) {
             break;
         }
-        if (sockInfo.wsFragment) {
-            if (wsUtils.fragmentComplete(sockInfo.wsFragment)) { // 消息接收完整
-                unsigned char* msg = wsUtils.getMsg(sockInfo.wsFragment);
-                wsUtils.freeFragment(sockInfo.wsFragment);
-                sockInfo.wsFragment = NULL;
-                cout << msg << endl;
-
-                WsFragment* fragment = (WsFragment*)calloc(sizeof(WsFragment), 1);
-                unsigned char* reply = (unsigned char*)calloc(strlen("Hello Client!"), 1);
-                memcpy(reply, "Hello Client!", strlen("Hello Client!"));
-                fragment->fin = 1;
-                fragment->dataLen2 = strlen((char*)reply);
-                fragment->data = reply;
-                fragment->opCode = 1;
-                reply = wsUtils.createMsg(fragment);
-                httpUtils.writeData(sockInfo, (char*)reply, fragment->fragmentSize);
-                wsUtils.freeFragment(fragment);
-            }
+        unsigned char* buf = wsUtils.createMsg(sockInfo.wsFragment);
+        if (sockInfo.remoteSockInfo) {
+            httpUtils.writeData(*sockInfo.remoteSockInfo, (char*)buf, sockInfo.wsFragment->fragmentSize);
+        } else if (sockInfo.localSockInfo) {
+            httpUtils.writeData(*sockInfo.localSockInfo, (char*)buf, sockInfo.wsFragment->fragmentSize);
         }
     }
 
-    return 0;
+    return NULL;
 }
 
 void addRootCert() {

@@ -9,6 +9,7 @@ typedef struct SockInfo {
     HttpHeader* header;
     SSL* ssl;
     SockInfo* remoteSockInfo;
+    SockInfo* localSockInfo;
 
     int sock;
     int closing;
@@ -30,5 +31,6 @@ typedef struct SockInfo {
 
     struct timeval tv;
     pthread_t tid;
+    pthread_t wsTid;
 } SockInfo;
 #endif
