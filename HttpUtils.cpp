@@ -616,7 +616,7 @@ ssize_t HttpUtils::sendTunnelOk(SockInfo& sockInfo) {
 
 ssize_t HttpUtils::sendUpgradeOk(SockInfo& sockInfo) {
     char* secWebSocketAccept = getSecWebSocketAccept(sockInfo);
-    string s = "HTTP/1.1 101 Switching Protocols\r\rUpgrade: websocket\r\nConnection: Upgrade\r\n";
+    string s = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n";
 
     if (secWebSocketAccept) {
         s += "Sec-WebSocket-Accept: ";

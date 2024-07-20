@@ -47,10 +47,6 @@ void SockContainer::resetSockInfo(SockInfo& sockInfo) {
         sockInfo.remoteSockInfo = NULL;
     }
 
-    if (sockInfo.header) {
-        this->freeHeader(sockInfo.header);
-    }
-
     this->resetSockInfoData(sockInfo);
 
     sockInfo.ssl = NULL;

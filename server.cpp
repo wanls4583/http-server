@@ -235,7 +235,7 @@ int initRemoteSock(SockInfo& sockInfo) {
     sockInfo.remoteSockInfo->sock = remoteSock;
     sockInfo.remoteSockInfo->localSockInfo = &sockInfo;
 
-    if (sockInfo.header->port == 443) {
+    if (sockInfo.ssl) {
         // SSL_load_error_strings();
         // OpenSSL_add_ssl_algorithms();
 
@@ -379,7 +379,7 @@ void addRootCert() {
     // 设置https代理
     runCmd(("networksetup -setsecurewebproxy Wi-Fi 127.0.0.1 " + to_string(proxyPort)).c_str());
     // 设置socket代理
-    runCmd(("networksetup -setsocksfirewallproxy Wi-Fi 127.0.0.1 " + to_string(proxyPort)).c_str());
+    // runCmd(("networksetup -setsocksfirewallproxy Wi-Fi 127.0.0.1 " + to_string(proxyPort)).c_str());
     free(cmdRes);
 }
 
