@@ -611,7 +611,7 @@ ssize_t HttpUtils::getSockErr(SockInfo& sockInfo, ssize_t err) {
 
 ssize_t HttpUtils::sendTunnelOk(SockInfo& sockInfo) {
     string s = "HTTP/1.1 200 Connection Established\r\n\r\n";
-    return write(sockInfo.sock, s.c_str(), s.length());
+    return this->writeData(sockInfo, (char*)s.c_str(), s.length());
 }
 
 ssize_t HttpUtils::sendUpgradeOk(SockInfo& sockInfo) {
@@ -626,7 +626,7 @@ ssize_t HttpUtils::sendUpgradeOk(SockInfo& sockInfo) {
 
     s += "\r\n";
 
-    return write(sockInfo.sock, s.c_str(), s.length());
+    return this->writeData(sockInfo, (char*)s.c_str(), s.length());
 }
 
 int HttpUtils::sendFile(SockInfo& sockInfo) {

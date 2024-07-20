@@ -37,7 +37,7 @@ void addRootCert();
 
 int main() {
     setProxyPort();
-    // addRootCert();
+    addRootCert();
     signal(SIGPIPE, SIG_IGN); // 屏蔽SIGPIPE信号，防止进程退出
     pthread_key_create(&ptKey, NULL);
     servSock = initServSock();
