@@ -122,6 +122,7 @@ void* initClntSock(void* arg) {
         }
 
         if (httpUtils.isClntHello(sockInfo)) {
+            // https/wss会先建立tls连接
             sockContainer.setNoBlock(sockInfo, 0); // ssl握手需要在阻塞模式下
             ssl = sockInfo.ssl = tlsUtil.getSSL(sockInfo);
             sockContainer.setNoBlock(sockInfo, 1); // 设置成非阻塞模式
@@ -156,14 +157,34 @@ void* initClntSock(void* arg) {
         sockContainer.shutdownSock();
         return NULL;
     }
-
+    // if (strcmp(header->hostname, "my.test.com") == 0) {
+    //     cout << sockInfo.head << endl;
+    // }
     if (strcmp(header->method, "CONNECT") == 0) // 客户端https代理连接请求
     {
+        // https/ws/wss，代理客户端会先发送CONNECT请求
+        // "CONNECT my.test.com:8000 HTTP/1.1\r\n
+        // Host: my.test.com:8000r\n
+        // Proxy-Connection: keep-aliver\n
+        // r\n"
         httpUtils.sendTunnelOk(sockInfo);
         sockInfo.isNoCheckSSL = 0; // CONNECT请求使用的是http协议，用来为https的代理建立连接，下一次请求才是真正的tls握手请求
         initClntSock(arg);
     } else if (httpUtils.checkMethod(sockInfo.header->method)) {
         if (sockInfo.header->port == proxyPort) { // 本地访问代理设置页面
+            // wbscoket升级请求，ws/wss：
+            // "GET / HTTP/1.1r\n
+            // Host: my.test.com:8000r\n
+            // Connection: Upgrader\n
+            // Pragma: no-cacher\n
+            // Cache-Control: no-cacher\n
+            // Upgrade: websocketr\n
+            // Origin: http://my.test.com:8000r\n
+            // Sec-WebSocket-Version: 13r\n
+            // Accept-Encoding: gzip, deflater\n
+            // Accept-Language: zh-CN,zh;q=0.9,en;q=0.8,zh-TW;q=0.7r\n
+            // Sec-WebSocket-Key: NEerQfgc8XgSwPhADPkkIg==r\n
+            // r\n"
             if (sockInfo.header->connnection && sockInfo.header->upgrade &&
                 !strcmp(sockInfo.header->connnection, "Upgrade") && !strcmp(sockInfo.header->upgrade, "websocket")) {
                 httpUtils.sendUpgradeOk(sockInfo);
