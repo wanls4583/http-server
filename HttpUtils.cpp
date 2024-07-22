@@ -249,21 +249,12 @@ char* HttpUtils::getSecWebSocketAccept(SockInfo& sockInfo) {
     return result;
 }
 
-int HttpUtils::isClntHello(SockInfo& sockInfo) {
-    char* buf = sockInfo.tlsHeader;
-    if (buf && buf[0] == 0x16 && buf[1] == 0x03 && buf[2] == 0x01 && buf[5] == 0x01) {
-        return 1;
-    }
-    return 0;
-}
-
-void HttpUtils::reciveTlsHeader(SockInfo& sockInfo, int& hasError) {
+void HttpUtils::preReciveHeader(SockInfo& sockInfo, int& hasError) {
     ssize_t bufSize = 0, count = 0;
-    int len = 6, endTryTimes = 0, loop = 0;
-    char* buf = (char*)calloc(1, len);
-    while (count < len) {
-        bufSize = this->preReadData(sockInfo, buf + count, len - count);
-
+    int len = 257, endTryTimes = 0, loop = 0;
+    char* buf = (char*)calloc(len, 1);
+    while (count <= 0) {
+        bufSize = this->preReadData(sockInfo, buf + count, len);
         checkError(sockInfo, bufSize, endTryTimes, loop, hasError);
 
         if (hasError) {
@@ -276,7 +267,16 @@ void HttpUtils::reciveTlsHeader(SockInfo& sockInfo, int& hasError) {
     }
 
     if (!hasError) {
-        sockInfo.tlsHeader = buf;
+        if (buf[0] == 0x16 && buf[1] == 0x03 && buf[2] == 0x01 && buf[5] == 0x01) {
+            sockInfo.tlsHeader = buf;
+        } else if (buf[0] == 0x05 && buf[1] == bufSize - 2) {
+            // socks协商请求
+            // VER（1字节）：协议版本，socks5为0x05
+            // NMETHODS（1字节）：支持认证方法的数量
+            // METHODS（可变长度，NMETHODS字节）
+            sockInfo.socksHeader = buf;
+            sockInfo.isProxy = 1;
+        }
     }
 }
 
@@ -289,7 +289,7 @@ HttpHeader* HttpUtils::reciveHeader(SockInfo& sockInfo, int& hasError) {
 
         if (pos != -1) {
             sockInfo.reqSize = pos + 4;
-            sockInfo.head = (char*)calloc(1, sockInfo.reqSize + 1);
+            sockInfo.head = (char*)calloc(sockInfo.reqSize + 1, 1);
             memcpy(sockInfo.head, sockInfo.buf, sockInfo.reqSize);
             if (string(sockInfo.head).find("HTTP") == 0) { // 响应头，HTTP/1.1 200 OK
                 header = this->getHttpResHeader(sockInfo);
@@ -300,7 +300,7 @@ HttpHeader* HttpUtils::reciveHeader(SockInfo& sockInfo, int& hasError) {
 
             sockInfo.bufSize -= sockInfo.reqSize;
             if (sockInfo.bufSize) {
-                char* buf = (char*)calloc(1, sockInfo.bufSize + 1);
+                char* buf = (char*)calloc(sockInfo.bufSize + 1, 1);
                 memcpy(buf, sockInfo.buf + sockInfo.reqSize, sockInfo.bufSize);
                 free(sockInfo.buf);
                 sockInfo.buf = buf;
@@ -388,7 +388,7 @@ void HttpUtils::reciveBody(SockInfo& sockInfo, int& hasError) {
         if (header->contentLenth) {
             if (header->contentLenth <= sockInfo.bufSize) {
                 sockInfo.bodySize = header->contentLenth;
-                sockInfo.body = (char*)calloc(1, sockInfo.bodySize + 1);
+                sockInfo.body = (char*)calloc(sockInfo.bodySize + 1, 1);
                 memcpy(sockInfo.body, sockInfo.buf, sockInfo.bodySize);
                 break;
             }
@@ -398,7 +398,7 @@ void HttpUtils::reciveBody(SockInfo& sockInfo, int& hasError) {
                 size_t pos = kmpStrstr(sockInfo.buf, boundary.c_str(), sockInfo.bufSize, boundary.size(), preSize);
                 if (pos != -1) {
                     sockInfo.bodySize = pos + boundary.size();
-                    sockInfo.body = (char*)calloc(1, sockInfo.bodySize + 1);
+                    sockInfo.body = (char*)calloc(sockInfo.bodySize + 1, 1);
                     memcpy(sockInfo.body, sockInfo.buf, sockInfo.bodySize);
                     break;
                 }
@@ -425,7 +425,7 @@ void HttpUtils::reciveBody(SockInfo& sockInfo, int& hasError) {
     if (!hasError && sockInfo.bodySize) {
         sockInfo.bufSize -= sockInfo.bodySize;
         if (sockInfo.bufSize) {
-            char* buf = (char*)calloc(1, sockInfo.bufSize + 1);
+            char* buf = (char*)calloc(sockInfo.bufSize + 1, 1);
             memcpy(buf, sockInfo.buf + sockInfo.bodySize, sockInfo.bufSize);
             free(sockInfo.buf);
             sockInfo.buf = buf;
@@ -475,13 +475,87 @@ void HttpUtils::reciveWsFragment(SockInfo& sockInfo, int& hasError) {
     if (!hasError && fragment) {
         sockInfo.bufSize -= fragment->fragmentSize;
         if (sockInfo.bufSize) {
-            char* buf = (char*)calloc(1, sockInfo.bufSize + 1);
+            char* buf = (char*)calloc(sockInfo.bufSize + 1, 1);
             memcpy(buf, sockInfo.buf + fragment->fragmentSize, sockInfo.bufSize);
             free(sockInfo.buf);
             sockInfo.buf = buf;
         } else {
             free(sockInfo.buf);
             sockInfo.buf = NULL;
+        }
+    }
+}
+
+void HttpUtils::reciveSocksReqHeader(SockInfo& sockInfo, int& hasError) {
+    ssize_t bufSize = 0, count = 0;
+    int len = 5, endTryTimes = 0, loop = 0;
+    char* buf = (char*)calloc(len, 1);
+    while (count < 5) {
+        bufSize = this->preReadData(sockInfo, buf, len);
+        checkError(sockInfo, bufSize, endTryTimes, loop, hasError);
+
+        if (hasError) {
+            break;
+        } else if (loop) {
+            loop = 0;
+            continue;
+        }
+        count = bufSize;
+    }
+
+    count = 0;
+    len = 0;
+
+    if (!hasError && buf[0] == 0x05 && buf[1] <= 0x03) {
+        if (buf[3] == 0x01) { // ip4
+            len = 4 + 4 + 2;
+        } else if (buf[3] == 0x03) { // domain
+            len = 4 + 1 + buf[4] + 2;
+        } else if (buf[3] == 0x04) { // ipv6
+            len = 4 + 16 + 2;
+        }
+    }
+
+    if (len) {
+        char* buf2 = buf;
+        char* buf = (char*)calloc(len, 1);
+        while (count < len) {
+            bufSize = this->readData(sockInfo, buf, len);
+            checkError(sockInfo, bufSize, endTryTimes, loop, hasError);
+
+            if (hasError) {
+                break;
+            } else if (loop) {
+                loop = 0;
+                continue;
+            }
+            count = bufSize;
+        }
+        if (count == len) {
+            SocksReqHeader* socksReqHeader = (SocksReqHeader*)calloc(1, sizeof(SocksReqHeader));
+            int index = 0, n = 0;
+            socksReqHeader->version = buf[index++];
+            // CMD=0x01：TCP连接模式，socks服务器向目标服务器发起TCP三次握手，连接成功后向客户端发送确认数据包
+            // CMD=0x02：BIND定模式，这种模式一般是双向监听，也就是说客户端也要开启一个端口监听来自目标服务器的数据
+            // CMD=0x03：UPD模式，直接转发
+            socksReqHeader->cmd = buf[index++];
+            socksReqHeader->rsv = buf[index++];
+            socksReqHeader->atyp = buf[index++];
+            // 0x01表示IPv4地址，DST.ADDR为4个字节
+            // 0x03表示域名，DST.ADDR第一个字节表示域名长度，后面的数据表示域名
+            // 0x04表示IPv6地址，DST.ADDR为16个字节长度
+            if (socksReqHeader->atyp == 0x01) {
+                n = 4;
+            } else if (socksReqHeader->atyp == 0x03) {
+                n = buf[index++];
+            } else if (socksReqHeader->atyp == 0x04) {
+                n = 16;
+            }
+            socksReqHeader->addr = (char*)calloc(n + 1, 1);
+            memcpy(socksReqHeader->addr, buf + index, n);
+            index += n;
+            socksReqHeader->port = (int)buf[index] << 8 | (unsigned char)buf[index + 1];
+            sockInfo.socksReqHeader = socksReqHeader;
         }
     }
 }
@@ -496,6 +570,13 @@ ssize_t HttpUtils::reciveData(SockInfo& sockInfo) {
         sockInfo.bufSize += bufSize;
         sockInfo.buf[sockInfo.bufSize] = '\0';
     }
+    return bufSize;
+}
+
+ssize_t HttpUtils::freeData(SockInfo& sockInfo) {
+    char buf[1024 * 10];
+    ssize_t bufSize = this->readData(sockInfo, buf, sizeof(buf));
+
     return bufSize;
 }
 
@@ -629,6 +710,27 @@ ssize_t HttpUtils::sendUpgradeOk(SockInfo& sockInfo) {
     return this->writeData(sockInfo, (char*)s.c_str(), s.length());
 }
 
+ssize_t HttpUtils::sendSocksOk(SockInfo& sockInfo) {
+    char* buf = (char*)calloc(2, 1);
+    buf[0] = 0x05;
+    buf[1] = 0x00;
+
+    return this->writeData(sockInfo, buf, 2);
+}
+
+ssize_t HttpUtils::sendSocksRes(SockInfo& sockInfo) {
+    int len = 4 + 4 + 2;
+    char* buf = (char*)calloc(len, 1);
+    buf[0] = 0x05;
+    buf[1] = 0x00;
+    buf[2] = 0x00;
+    buf[3] = 0x01;
+    buf[8] = (sockInfo.socksReqHeader->port & 0xff00) >> 8;
+    buf[9] = sockInfo.socksReqHeader->port & 0xff;
+
+    return this->writeData(sockInfo, buf, len);
+}
+
 int HttpUtils::sendFile(SockInfo& sockInfo) {
     string fName = sockInfo.header->path;
     if (fName.length()) {
@@ -709,7 +811,7 @@ void HttpUtils::createReqData(SockInfo& sockInfo, char*& req, size_t& reqSize) {
     firstLine += header->protocol;
 
     reqSize = firstLine.size() + sockInfo.reqSize - pos + sockInfo.bodySize;
-    req = (char*)calloc(1, reqSize + 1);
+    req = (char*)calloc(reqSize + 1, 1);
     memcpy(req, firstLine.c_str(), firstLine.size());
     memcpy(req + firstLine.size(), sockInfo.head + pos, sockInfo.reqSize - pos);
     memcpy(req + firstLine.size() + sockInfo.reqSize - pos, sockInfo.body, sockInfo.bodySize);

@@ -22,6 +22,7 @@ public:
     SockContainer();
     ~SockContainer();
     void freeHeader(HttpHeader* header);
+    void freeSocksReqHeader(SocksReqHeader* header);
     void resetSockInfo(SockInfo& sockInfo);
     void resetSockInfoData(SockInfo& sockInfo);
     void initSockInfos();

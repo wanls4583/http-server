@@ -61,7 +61,7 @@ char* TlsUtils::getServerName(int sock) {
         pos += 2;
         if (extType == 0) {
             int nameLen = bufToInt(pos + 3, 2);
-            serverName = (char*)calloc(1, nameLen + 1);
+            serverName = (char*)calloc(nameLen + 1, 1);
             memcpy(serverName, pos + 5, nameLen);
             break;
         }

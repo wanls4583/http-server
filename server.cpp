@@ -57,7 +57,7 @@ int main() {
 
             (*sockInfo).sock = sock;
             (*sockInfo).originSockFlag = fcntl(sock, F_GETFL, 0);
-            (*sockInfo).ip = (char*)calloc(1, strlen(ip) + 1); // inet_ntoa 获取到的地址永远是同一块地址
+            (*sockInfo).ip = (char*)calloc(strlen(ip) + 1, 1); // inet_ntoa 获取到的地址永远是同一块地址
             memcpy((*sockInfo).ip, ip, strlen(ip));
 
             pthread_create(&tid, NULL, initClntSock, sockInfo);
@@ -114,22 +114,42 @@ void* initClntSock(void* arg) {
     sockContainer.setNoBlock(sockInfo, 1); // 设置成非阻塞模式
 
     if (!sockInfo.isNoCheckSSL) {
-        httpUtils.reciveTlsHeader(sockInfo, hasError);
-
+        httpUtils.preReciveHeader(sockInfo, hasError);
         if (hasError) {
             sockContainer.shutdownSock();
             return NULL;
         }
-
-        if (httpUtils.isClntHello(sockInfo)) {
-            // https/wss会先建立tls连接
+        if (sockInfo.tlsHeader) { // https/wss会先建立tls连接
             sockContainer.setNoBlock(sockInfo, 0); // ssl握手需要在阻塞模式下
             ssl = sockInfo.ssl = tlsUtil.getSSL(sockInfo);
             sockContainer.setNoBlock(sockInfo, 1); // 设置成非阻塞模式
+            sockInfo.isNoCheckSocks = 1;
         }
-
         sockContainer.resetSockInfoData(sockInfo); // 清除掉 CONNECT 请求的数据
         sockInfo.isNoCheckSSL = 1;
+    }
+
+    if (!sockInfo.isNoCheckSocks) {
+        httpUtils.preReciveHeader(sockInfo, hasError);
+        if (hasError) {
+            sockContainer.shutdownSock();
+            return NULL;
+        }
+        sockInfo.isNoCheckSocks = 1;
+        if (sockInfo.socksHeader) {
+            httpUtils.freeData(sockInfo); // 消耗掉流中的数据
+            httpUtils.sendSocksOk(sockInfo);
+            httpUtils.reciveSocksReqHeader(sockInfo, hasError);
+            if (hasError) {
+                sockContainer.shutdownSock();
+                return NULL;
+            }
+            httpUtils.sendSocksRes(sockInfo);
+            sockInfo.isNoCheckSSL = 0; // socks5可以代理https协议
+            // 开始转发，注意：使用socks5代理，不会发送CONNECT请求，而是直接发送http/https/ws/wss请求
+            initClntSock(arg);
+            return NULL;
+        }
     }
 
     header = httpUtils.reciveHeader(sockInfo, hasError); // 读取客户端的请求头
@@ -294,7 +314,7 @@ int initWebscoket(SockInfo& sockInfo) {
                 sockInfo.wsFragment = NULL;
                 cout << msg << endl;
 
-                WsFragment* fragment = (WsFragment*)calloc(sizeof(WsFragment), 1);
+                WsFragment* fragment = (WsFragment*)calloc(1, sizeof(WsFragment));
                 unsigned char* reply = (unsigned char*)calloc(strlen("Hello Client!"), 1);
                 memcpy(reply, "Hello Client!", strlen("Hello Client!"));
                 fragment->fin = 1;
@@ -342,7 +362,7 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
     }
 
     int dataSize = remoteSockInfo.reqSize + remoteSockInfo.bodySize;
-    char* data = (char*)calloc(1, dataSize);
+    char* data = (char*)calloc(dataSize, 1);
     memcpy(data, remoteSockInfo.head, remoteSockInfo.reqSize);
 
     if (remoteSockInfo.bodySize) {
@@ -396,11 +416,11 @@ void addRootCert() {
         runCmd("security add-trusted-cert -r trustRoot -k ~/Library/Keychains/login.keychain-db rootCA/rootCA.crt ");
     }
     // 设置http代理
-    runCmd(("networksetup -setwebproxy Wi-Fi 127.0.0.1 " + to_string(proxyPort)).c_str());
+    // runCmd(("networksetup -setwebproxy Wi-Fi 127.0.0.1 " + to_string(proxyPort)).c_str());
     // 设置https代理
-    runCmd(("networksetup -setsecurewebproxy Wi-Fi 127.0.0.1 " + to_string(proxyPort)).c_str());
+    // runCmd(("networksetup -setsecurewebproxy Wi-Fi 127.0.0.1 " + to_string(proxyPort)).c_str());
     // 设置socket代理
-    // runCmd(("networksetup -setsocksfirewallproxy Wi-Fi 127.0.0.1 " + to_string(proxyPort)).c_str());
+    runCmd(("networksetup -setsocksfirewallproxy Wi-Fi 127.0.0.1 " + to_string(proxyPort)).c_str());
     free(cmdRes);
 }
 

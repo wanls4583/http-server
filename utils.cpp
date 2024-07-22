@@ -73,7 +73,7 @@ int kmpStrstr(const char* s, const char* p, size_t sSize, size_t pSize, size_t s
 
 char* copyBuf(const char* str) {
     if (str && strlen(str)) {
-        char* s = (char*)calloc(1, strlen(str) + 1);
+        char* s = (char*)calloc(strlen(str) + 1, 1);
         strcpy(s, str);
         return s;
     }
@@ -84,14 +84,14 @@ char* sliceBuf(const char* str, size_t start, size_t end) {
     if (end <= start) {
         return NULL;
     }
-    char *res = (char *)calloc(1, end - start);
+    char *res = (char *)calloc(end - start, 1);
     memcpy(res, str + start, end - start);
 
     return res;
 }
 
 char* concatBuf(const char* a, const char* b, size_t aSize, size_t bSize) {
-    char *res = (char *)calloc(1, aSize + bSize);
+    char *res = (char *)calloc(aSize + bSize, 1);
 
     memcpy(res, a, aSize);
     memcpy(res + aSize, b, bSize);
@@ -102,7 +102,7 @@ char* concatBuf(const char* a, const char* b, size_t aSize, size_t bSize) {
 char* runCmd(const char* strCmd) {
     FILE* fp = NULL;
     char buf[1024];
-    char* result = (char*)calloc(1, 4096);
+    char* result = (char*)calloc(4096, 1);
     if ((fp = popen(strCmd, "r")) != NULL) {
         while (fgets(buf, 1024, fp) != NULL) {
             strcat(result, buf);
@@ -122,7 +122,7 @@ char* readFile(ifstream& inFile, size_t& len) {
 
     inFile.seekg(0, inFile.beg);
 
-    char* arr = (char*)calloc(1, len);
+    char* arr = (char*)calloc(len, 1);
 
     inFile.read(arr, len);
 

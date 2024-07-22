@@ -37,6 +37,11 @@ void SockContainer::freeHeader(HttpHeader* header) {
     free(header);
 }
 
+void SockContainer::freeSocksReqHeader(SocksReqHeader* header) {
+    free(header->addr);
+    free(header);
+}
+
 void SockContainer::resetSockInfo(SockInfo& sockInfo) {
     pthread_mutex_lock(&sockContainerMutex);
 
@@ -57,6 +62,7 @@ void SockContainer::resetSockInfo(SockInfo& sockInfo) {
     sockInfo.originSockFlag = 0;
     sockInfo.isNoBloack = 0;
     sockInfo.isNoCheckSSL = 0;
+    sockInfo.isNoCheckSocks = 0;
     sockInfo.isProxy = 0;
 
     sockInfo.bufSize = 0;
@@ -85,6 +91,11 @@ void SockContainer::resetSockInfoData(SockInfo& sockInfo) {
         sockInfo.header = NULL;
     }
 
+    if (sockInfo.socksReqHeader) {
+        this->freeSocksReqHeader(sockInfo.socksReqHeader);
+        sockInfo.socksReqHeader = NULL;
+    }
+
     sockInfo.reqSize = 0;
     sockInfo.bodySize = 0;
 
@@ -96,6 +107,8 @@ void SockContainer::resetSockInfoData(SockInfo& sockInfo) {
 
     free(sockInfo.tlsHeader);
     sockInfo.tlsHeader = NULL;
+    free(sockInfo.socksHeader);
+    sockInfo.socksHeader = NULL;
     free(sockInfo.head);
     sockInfo.head = NULL;
     free(sockInfo.body);
