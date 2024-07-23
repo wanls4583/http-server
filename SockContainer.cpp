@@ -3,9 +3,10 @@
 using namespace std;
 
 extern WsUtils wsUtils;
+extern SockContainer sockContainer;
 extern pthread_key_t ptKey;
 
-SockContainer::SockContainer(): timeout(60) {
+SockContainer::SockContainer(): timeout(60), id(1) {
     pthread_mutex_init(&sockContainerMutex, NULL);
     pthread_mutex_init(&shutdownMutex, NULL);
     this->initSockInfos();
@@ -52,11 +53,16 @@ void SockContainer::resetSockInfo(SockInfo& sockInfo) {
         sockInfo.remoteSockInfo = NULL;
     }
 
+    if (sockContainer.wsScokInfo == &sockInfo) {
+        sockContainer.wsScokInfo = NULL;
+    }
+
     this->resetSockInfoData(sockInfo);
 
     sockInfo.ssl = NULL;
     sockInfo.localSockInfo = NULL;
 
+    sockInfo.id = -1;
     sockInfo.sock = -1;
     sockInfo.closing = 0;
     sockInfo.originSockFlag = 0;
@@ -130,6 +136,7 @@ SockInfo* SockContainer::getSockInfo() {
             gettimeofday(&(this->sockInfos[i].tv), NULL);
             pthread_mutex_unlock(&sockContainerMutex);
             this->sockInfos[i].sock = 0;
+            this->sockInfos[i].id = this->id++;
             return &this->sockInfos[i];
         }
     }

@@ -32,9 +32,10 @@ void* initClntSock(void* arg);
 int initRemoteSock(SockInfo& sockInfo);
 int forward(SockInfo& sockInfo);
 void* forwardWebocket(void* arg);
-int initWebscoket(SockInfo& sockInfo);
+int initLocalWebscoket(SockInfo& sockInfo);
 void setProxyPort();
 void addRootCert();
+void sendRecordToLacal(SockInfo& sockInfo, int type, char* data, size_t size);
 
 int main() {
     setProxyPort();
@@ -208,7 +209,7 @@ void* initClntSock(void* arg) {
             if (sockInfo.header->connnection && sockInfo.header->upgrade &&
                 !strcmp(sockInfo.header->connnection, "Upgrade") && !strcmp(sockInfo.header->upgrade, "websocket")) {
                 httpUtils.sendUpgradeOk(sockInfo);
-                initWebscoket(sockInfo);
+                initLocalWebscoket(sockInfo);
             } else {
                 httpUtils.sendFile(sockInfo);
             }
@@ -232,12 +233,15 @@ void* initClntSock(void* arg) {
             return NULL;
         }
 
-        if (sockInfo.header->connnection && strcmp(sockInfo.header->connnection, "close") == 0) { // 客户端非长连接
-            sockContainer.shutdownSock();
-        } else {
-            sockContainer.resetSockInfoData(sockInfo);
-            initClntSock(arg);
+        if (sockInfo.header) {
+            if (sockInfo.header->connnection && strcmp(sockInfo.header->connnection, "close") == 0) { // 客户端非长连接
+                sockContainer.shutdownSock();
+            } else {
+                sockContainer.resetSockInfoData(sockInfo);
+                initClntSock(arg);
+            }
         }
+
     }
 
     return NULL;
@@ -300,35 +304,59 @@ int initRemoteSock(SockInfo& sockInfo) {
     return 1;
 }
 
-int initWebscoket(SockInfo& sockInfo) {
+int initLocalWebscoket(SockInfo& sockInfo) {
     int hasError = 0;
+    if (sockContainer.wsScokInfo) {
+        if (sockContainer.wsScokInfo->sock == sockInfo.sock) {
+            return 0;
+        }
+        sockContainer.shutdownSock(&sockInfo);
+    }
+    sockContainer.wsScokInfo = &sockInfo;
     while (1) {
-        httpUtils.reciveWsFragment(sockInfo, hasError);
+        WsFragment* wsFragment = httpUtils.reciveWsFragment(sockInfo, hasError);
         if (hasError) {
+            sockContainer.shutdownSock(&sockInfo);
             break;
         }
-        if (sockInfo.wsFragment) {
+        if (wsFragment) {
+            if (wsFragment->opCode == 0x08) { // 关闭
+                sockContainer.shutdownSock(&sockInfo);
+                break;
+            }
             if (wsUtils.fragmentComplete(sockInfo.wsFragment)) { // 消息接收完整
                 unsigned char* msg = wsUtils.getMsg(sockInfo.wsFragment);
+                cout << "ws:" << msg << endl;
                 wsUtils.freeFragment(sockInfo.wsFragment);
                 sockInfo.wsFragment = NULL;
-                cout << msg << endl;
-
-                WsFragment* fragment = (WsFragment*)calloc(1, sizeof(WsFragment));
-                unsigned char* reply = (unsigned char*)calloc(strlen("Hello Client!"), 1);
-                memcpy(reply, "Hello Client!", strlen("Hello Client!"));
-                fragment->fin = 1;
-                fragment->dataLen2 = strlen((char*)reply);
-                fragment->data = reply;
-                fragment->opCode = 1;
-                reply = wsUtils.createMsg(fragment);
-                httpUtils.writeData(sockInfo, (char*)reply, fragment->fragmentSize);
-                wsUtils.freeFragment(fragment);
             }
         }
     }
 
     return 0;
+}
+
+void sendRecordToLacal(SockInfo& sockInfo, int type, char* data, size_t size) {
+    if (!sockContainer.wsScokInfo) {
+        return;
+    }
+    WsFragment* fragment = (WsFragment*)calloc(1, sizeof(WsFragment));
+    int idSize = sizeof(sockInfo.id);
+    size_t bufSize = 1 + idSize + size;
+    u_int64_t id = htonll(sockInfo.id);
+    unsigned char* msg = (unsigned char*)calloc(bufSize, 1);
+
+    msg[0] = type;
+    memcpy(msg + 1, &id, idSize);
+    memcpy(msg + 1 + idSize, data, size);
+
+    fragment->fin = 1;
+    fragment->dataLen2 = bufSize;
+    fragment->data = msg;
+    fragment->opCode = 2;
+    msg = wsUtils.createMsg(fragment);
+    httpUtils.writeData(*sockContainer.wsScokInfo, (char*)msg, fragment->fragmentSize);
+    wsUtils.freeFragment(fragment);
 }
 
 int forward(SockInfo& sockInfo) { // 转发http/https请求
@@ -342,6 +370,7 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
     httpUtils.createReqData(sockInfo, req, reqSize);
 
     result = httpUtils.writeData(*sockInfo.remoteSockInfo, req, reqSize); // 转发客户端请求到远程服务器
+    sendRecordToLacal(sockInfo, 1, req, reqSize);
 
     if (READ_ERROR == result || READ_END == result) {
         return 0;
@@ -370,6 +399,7 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
     }
 
     result = httpUtils.writeData(sockInfo, data, dataSize); // 将远程服务器返回的数据发送给客户端
+    sendRecordToLacal(sockInfo, 2, data, dataSize);
     free(data);
 
     if (READ_ERROR == result || READ_END == result) {
@@ -393,15 +423,15 @@ void* forwardWebocket(void* arg) { // 转发webscoket请求
     SockInfo& sockInfo = *((SockInfo*)arg);
     int hasError = 0;
     while (1) {
-        httpUtils.reciveWsFragment(sockInfo, hasError);
+        WsFragment* wsFragment = httpUtils.reciveWsFragment(sockInfo, hasError);
         if (hasError) {
             break;
         }
-        unsigned char* buf = wsUtils.createMsg(sockInfo.wsFragment);
+        unsigned char* buf = wsUtils.createMsg(wsFragment);
         if (sockInfo.remoteSockInfo) {
-            httpUtils.writeData(*sockInfo.remoteSockInfo, (char*)buf, sockInfo.wsFragment->fragmentSize);
+            httpUtils.writeData(*sockInfo.remoteSockInfo, (char*)buf, wsFragment->fragmentSize);
         } else if (sockInfo.localSockInfo) {
-            httpUtils.writeData(*sockInfo.localSockInfo, (char*)buf, sockInfo.wsFragment->fragmentSize);
+            httpUtils.writeData(*sockInfo.localSockInfo, (char*)buf, wsFragment->fragmentSize);
         }
     }
 

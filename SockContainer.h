@@ -16,11 +16,13 @@ private:
     SockInfo sockInfos[MAX_SOCK];
     pthread_mutex_t sockContainerMutex;
     pthread_mutex_t shutdownMutex;
+    u_int64_t id;
 
 public:
     int timeout;
     SockContainer();
     ~SockContainer();
+    SockInfo* wsScokInfo; // 本地通信
     void freeHeader(HttpHeader* header);
     void freeSocksReqHeader(SocksReqHeader* header);
     void resetSockInfo(SockInfo& sockInfo);

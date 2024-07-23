@@ -30,7 +30,7 @@ public:
     char* getSecWebSocketAccept(SockInfo& sockInfo);
     int checkMethod(const char* method);
     void reciveBody(SockInfo& sockInfo, int& hasError);
-    void reciveWsFragment(SockInfo& sockInfo, int& hasError);
+    WsFragment* reciveWsFragment(SockInfo& sockInfo, int& hasError);
     void reciveSocksReqHeader(SockInfo& sockInfo, int& hasError);
     void preReciveHeader(SockInfo& sockInfo, int& hasError);
     void createReqData(SockInfo& sockInfo, char*& req, size_t& reqSize);

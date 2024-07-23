@@ -436,10 +436,10 @@ void HttpUtils::reciveBody(SockInfo& sockInfo, int& hasError) {
     }
 }
 
-void HttpUtils::reciveWsFragment(SockInfo& sockInfo, int& hasError) {
+WsFragment* HttpUtils::reciveWsFragment(SockInfo& sockInfo, int& hasError) {
     ssize_t bufSize = sockInfo.bufSize;
     WsFragment* fragment = NULL;
-    int endTryTimes = 0, loop = 0;
+    int endTryTimes = -1, loop = 0;
 
     while (1) {
         if (sockInfo.bufSize) {
@@ -484,6 +484,8 @@ void HttpUtils::reciveWsFragment(SockInfo& sockInfo, int& hasError) {
             sockInfo.buf = NULL;
         }
     }
+
+    return fragment;
 }
 
 void HttpUtils::reciveSocksReqHeader(SockInfo& sockInfo, int& hasError) {
@@ -649,7 +651,7 @@ void HttpUtils::checkError(SockInfo& sockInfo, ssize_t bufSize, int& endTryTimes
             hasError = 1;
             return;
         }
-        if (READ_END == bufSize) {
+        if (READ_END == bufSize && endTryTimes != -1) { // -1代表不受重试次数控制
             if (endTryTimes > this->endTryTimes) {
                 hasError = 1;
                 return;

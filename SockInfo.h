@@ -13,6 +13,7 @@ typedef struct SockInfo {
     SockInfo* remoteSockInfo;
     SockInfo* localSockInfo;
 
+    u_int64_t id;
     int sock;
     int closing;
     int originSockFlag;

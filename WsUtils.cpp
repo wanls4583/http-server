@@ -27,7 +27,7 @@ WsFragment* WsUtils::parseFragment(SockInfo& sockInfo) {
         return fragment;
     }
 
-    fragment->fragmentSize = 2;
+    fragment->fragmentSize = 2; // fragment至少有两个字节，即使是数据长度为0（例如 close:0x08、ping:0x09 等操作）
     if (fragment->dataLen == 126) {
         checkFragment(bufSize - 2, fragment);
         fragment->dataLen2 = (buf[2] << 8) | buf[3];
@@ -118,11 +118,6 @@ unsigned char* WsUtils::createMsg(WsFragment* fragment) {
 
     if (dataLen > 65535) {
         msg[index++] |= 0x7f;
-        unsigned short len = htons(dataLen);
-        memcpy(msg + index, &len, 2);
-        index += 2;
-    } else if (dataLen > 125) {
-        msg[index++] |= 0x7e;
         msg[index] = (dataLen >> 56) & 0xff;
         msg[index + 1] = (dataLen >> 48) & 0xff;
         msg[index + 2] = (dataLen >> 40) & 0xff;
@@ -132,6 +127,11 @@ unsigned char* WsUtils::createMsg(WsFragment* fragment) {
         msg[index + 6] = (dataLen >> 8) & 0xff;
         msg[index + 7] = (dataLen) & 0xff;
         index += 8;
+    } else if (dataLen > 125) {
+        msg[index++] |= 0x7e;
+        unsigned short len = htons(dataLen);
+        memcpy(msg + index, &len, 2);
+        index += 2;
     } else {
         msg[index++] |= dataLen;
     }
