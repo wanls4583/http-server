@@ -40,7 +40,13 @@
     
         // Listen for messages
         socket.addEventListener("message", (event) => {
-            console.log("Message from server ", event.data);
+            const data = event.data
+            if (data instanceof Blob) {
+                data.arrayBuffer().then(buffer => {
+                    buffer = new Uint8Array(buffer)
+                    console.log(buffer)
+                })
+            }
         });
     }
 </script>

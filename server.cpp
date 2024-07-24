@@ -406,7 +406,7 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
         return 0;
     }
 
-    if (header->status == 101 && strcmp(header->upgrade, "websocket") == 0) { // webscoket连接成功
+    if (header->status == 101 && header->upgrade && strcmp(header->upgrade, "websocket") == 0) { // webscoket连接成功
         pthread_t localTid, remoteTid;
         sockInfo.wsTid = localTid;
         sockInfo.remoteSockInfo->wsTid = remoteTid;
@@ -446,9 +446,9 @@ void addRootCert() {
         runCmd("security add-trusted-cert -r trustRoot -k ~/Library/Keychains/login.keychain-db rootCA/rootCA.crt ");
     }
     // 设置http代理
-    // runCmd(("networksetup -setwebproxy Wi-Fi 127.0.0.1 " + to_string(proxyPort)).c_str());
+    runCmd(("networksetup -setwebproxy Wi-Fi 127.0.0.1 " + to_string(proxyPort)).c_str());
     // 设置https代理
-    // runCmd(("networksetup -setsecurewebproxy Wi-Fi 127.0.0.1 " + to_string(proxyPort)).c_str());
+    runCmd(("networksetup -setsecurewebproxy Wi-Fi 127.0.0.1 " + to_string(proxyPort)).c_str());
     // 设置socket代理
     runCmd(("networksetup -setsocksfirewallproxy Wi-Fi 127.0.0.1 " + to_string(proxyPort)).c_str());
     free(cmdRes);
