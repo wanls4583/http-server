@@ -24,7 +24,7 @@ typedef struct HttpHeader
     char *reason;
     char *upgrade;
     char *secWebSocketKey;
-    size_t contentLenth;
+    ssize_t contentLenth;
     int port;
     int status;
 } HttpHeader;

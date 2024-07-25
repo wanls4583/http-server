@@ -14,12 +14,12 @@ HttpUtils::~HttpUtils() {
 HttpHeader* HttpUtils::getHttpReqHeader(SockInfo& sockInfo) {
     HttpHeader* header = (HttpHeader*)calloc(1, sizeof(HttpHeader));
     string line = "", prop = "", val = "", head = sockInfo.head;
-    size_t pos = head.find("\r\n");
+    ssize_t pos = head.find("\r\n");
 
     if (pos != head.npos) {
         line = head.substr(0, pos);
-        size_t lSpace = line.find(' ');
-        size_t rSpace = line.rfind(' ');
+        ssize_t lSpace = line.find(' ');
+        ssize_t rSpace = line.rfind(' ');
         if (lSpace == head.npos) {
             return NULL;
         }
@@ -56,6 +56,9 @@ HttpHeader* HttpUtils::getHttpReqHeader(SockInfo& sockInfo) {
             // 服务器模式或者 https 代理请求。https 请求代理会先发送 CONNECT 请求，所以请求路径不会带协议头。例：
             // GET /common/csdn-toolbar/images/wx-pay.svg HTTP/1.1
             string url = sockInfo.ssl ? "https://" : "http://";
+            if (header->upgrade && strcmp(header->upgrade, "websocket") == 0) {
+                url = sockInfo.ssl ? "wss://" : "ws://";
+            }
             url += header->hostname;
             url += ":";
             url += to_string(header->port);
@@ -84,10 +87,10 @@ HttpHeader* HttpUtils::getHttpReqHeader(SockInfo& sockInfo) {
 HttpHeader* HttpUtils::getHttpResHeader(SockInfo& sockInfo) {
     HttpHeader* header = (HttpHeader*)calloc(1, sizeof(HttpHeader));
     string line = "", prop = "", val = "", head = sockInfo.head;
-    size_t pos = head.find("\r\n");
+    ssize_t pos = head.find("\r\n");
 
     if (pos != head.npos) {
-        size_t space = head.npos;
+        ssize_t space = head.npos;
 
         line = head.substr(0, pos);
         space = line.find(' ');
@@ -151,12 +154,12 @@ int HttpUtils::checkMethod(const char* method) {
 }
 
 void HttpUtils::setHeaderKeyValue(HttpHeader* header, string head) {
-    size_t pos = head.npos;
+    ssize_t pos = head.npos;
     string line = "", prop = "", val = "";
     while ((pos = head.find("\r\n")) != head.npos) {
         line = head.substr(0, pos);
         head = head.substr(pos + 2);
-        size_t colon = line.find(": ");
+        ssize_t colon = line.find(": ");
         if (colon == head.npos) {
             break;
         }
@@ -285,7 +288,7 @@ HttpHeader* HttpUtils::reciveHeader(SockInfo& sockInfo, int& hasError) {
     ssize_t bufSize = 0;
     int endTryTimes = 0, loop = 0;
     while (!sockInfo.header) {
-        size_t pos = kmpStrstr(sockInfo.buf, "\r\n\r\n", sockInfo.bufSize, 4);
+        ssize_t pos = kmpStrstr(sockInfo.buf, "\r\n\r\n", sockInfo.bufSize, 4);
 
         if (pos != -1) {
             sockInfo.reqSize = pos + 4;
@@ -395,7 +398,7 @@ void HttpUtils::reciveBody(SockInfo& sockInfo, int& hasError) {
         } else if (boundary.size()) {
             if (sockInfo.bufSize) {
                 preSize = preSize > boundary.size() ? preSize - boundary.size() : preSize;
-                size_t pos = kmpStrstr(sockInfo.buf, boundary.c_str(), sockInfo.bufSize, boundary.size(), preSize);
+                ssize_t pos = kmpStrstr(sockInfo.buf, boundary.c_str(), sockInfo.bufSize, boundary.size(), preSize);
                 if (pos != -1) {
                     sockInfo.bodySize = pos + boundary.size();
                     sockInfo.body = (char*)calloc(sockInfo.bodySize + 1, 1);
@@ -583,7 +586,7 @@ ssize_t HttpUtils::freeData(SockInfo& sockInfo) {
 }
 
 // 该方法查看流中的数据，但不会将数据从流中删除
-ssize_t HttpUtils::preReadData(SockInfo& sockInfo, char* buf, size_t length) {
+ssize_t HttpUtils::preReadData(SockInfo& sockInfo, char* buf, ssize_t length) {
     ssize_t err;
     ssize_t result;
 
@@ -599,7 +602,7 @@ ssize_t HttpUtils::preReadData(SockInfo& sockInfo, char* buf, size_t length) {
 }
 
 // 读取流中的数据，并将读取的将数据从流中删除
-ssize_t HttpUtils::readData(SockInfo& sockInfo, char* buf, size_t length) {
+ssize_t HttpUtils::readData(SockInfo& sockInfo, char* buf, ssize_t length) {
     ssize_t err;
     ssize_t result;
 
@@ -619,19 +622,23 @@ ssize_t HttpUtils::readData(SockInfo& sockInfo, char* buf, size_t length) {
 }
 
 // 将数据写入到流中
-ssize_t HttpUtils::writeData(SockInfo& sockInfo, char* buf, size_t length) {
+ssize_t HttpUtils::writeData(SockInfo& sockInfo, char* buf, ssize_t length) {
     ssize_t err;
     ssize_t result = READ_AGAIN;
-
-    while (READ_AGAIN == result) {
+    ssize_t count = 0;
+    while (count < length) {
         if (sockInfo.ssl == NULL) {
-            err = write(sockInfo.sock, buf, length);
+            err = write(sockInfo.sock, buf + count, length - count);
         } else {
-            err = SSL_write(sockInfo.ssl, buf, length);
+            err = SSL_write(sockInfo.ssl, buf + count, length - count);
         }
         result = this->getSockErr(sockInfo, err);
         if (READ_AGAIN == result) {
             usleep(this->cpuTime);
+        } else if (READ_ERROR == result) {
+            break;
+        } else {
+            count += result;
         }
     }
 
@@ -671,7 +678,7 @@ ssize_t HttpUtils::getSockErr(SockInfo& sockInfo, ssize_t err) {
     }
 
     if (sockInfo.ssl == NULL) {
-        if (err > 0) {
+        if (err > 0) { // 大于0代表写入或者读取成功
             result = err;
         } else if (errno == EINTR || errno == EWOULDBLOCK || errno == EAGAIN) {
             result = READ_AGAIN;
@@ -680,7 +687,7 @@ ssize_t HttpUtils::getSockErr(SockInfo& sockInfo, ssize_t err) {
         }
     } else {
         int nRes = SSL_get_error(sockInfo.ssl, err);
-        if (nRes == SSL_ERROR_NONE) {
+        if (nRes == SSL_ERROR_NONE) { // SSL_ERROR_NONE代表成功
             result = err;
         } else if (SSL_ERROR_WANT_READ == nRes || SSL_ERROR_WANT_WRITE == nRes) {
             result = READ_AGAIN;
@@ -747,7 +754,7 @@ int HttpUtils::sendFile(SockInfo& sockInfo) {
         if (inFile.good() && stat(fName.c_str(), &s) == 0 && s.st_mode & S_IFREG) {
             string head = "HTTP/1.1 200 OK\r\n";
             string type = this->getType(fName);
-            size_t len = 0;
+            ssize_t len = 0;
             char* data = readFile(inFile, len);
 
             head += "Content-Type: " + type + "\r\n";
@@ -800,7 +807,7 @@ string HttpUtils::getType(string fName) {
     }
 }
 
-void HttpUtils::createReqData(SockInfo& sockInfo, char*& req, size_t& reqSize) {
+void HttpUtils::createReqData(SockInfo& sockInfo, char*& req, ssize_t& reqSize) {
     string firstLine = "";
     string head = sockInfo.head;
     HttpHeader* header = sockInfo.header;

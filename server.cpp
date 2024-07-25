@@ -17,6 +17,9 @@
 
 using namespace std;
 
+enum { MSG_REQ = 1, MSG_RES, MSG_DNS, MSG_STATUS, MSG_TIME };
+enum { STATUS_FAIL_CONNECT = 1, STATUS_FAIL_SSL_CONNECT };
+
 static int proxyPort = 8000;
 static int servSock;
 static struct sockaddr_in servAddr;
@@ -35,7 +38,7 @@ void* forwardWebocket(void* arg);
 int initLocalWebscoket(SockInfo& sockInfo);
 void setProxyPort();
 void addRootCert();
-void sendRecordToLacal(SockInfo& sockInfo, int type, char* data, size_t size);
+void sendRecordToLacal(SockInfo& sockInfo, int type, char* data, ssize_t size);
 
 int main() {
     setProxyPort();
@@ -178,9 +181,9 @@ void* initClntSock(void* arg) {
         sockContainer.shutdownSock();
         return NULL;
     }
-    // if (strcmp(header->hostname, "my.test.com") == 0) {
-    //     cout << sockInfo.head << endl;
-    // }
+
+    sockInfo.id = sockContainer.id++;
+
     if (strcmp(header->method, "CONNECT") == 0) // 客户端https代理连接请求
     {
         // https/ws/wss，代理客户端会先发送CONNECT请求
@@ -214,11 +217,19 @@ void* initClntSock(void* arg) {
                 httpUtils.sendFile(sockInfo);
             }
         } else if (sockInfo.isProxy) { // 客户端代理转发请求
+            char* req;
+            ssize_t reqSize;
+            httpUtils.createReqData(sockInfo, req, reqSize);
+            sendRecordToLacal(sockInfo, MSG_REQ, req, reqSize);
+            gettimeofday(&sockInfo.forward_start_tv, NULL);
+
             if (!sockInfo.remoteSockInfo) { // 新建远程连接
                 if (!initRemoteSock(sockInfo)) {
                     sockContainer.shutdownSock();
                     return NULL;
                 }
+            } else {
+                sendRecordToLacal(sockInfo, MSG_DNS, sockInfo.remoteSockInfo->ip, strlen(sockInfo.remoteSockInfo->ip));
             }
             if (!forward(sockInfo)) {
                 sockContainer.shutdownSock();
@@ -269,14 +280,21 @@ int initRemoteSock(SockInfo& sockInfo) {
     remoteAddr.sin_addr = *((struct in_addr*)host->h_addr_list[0]);
     remoteAddr.sin_port = htons(sockInfo.header->port);
 
+    char* ip = (char*)calloc(INET_ADDRSTRLEN, 1);
+    inet_ntop(host->h_addrtype, host->h_addr_list[0], ip, INET_ADDRSTRLEN);
+    sendRecordToLacal(sockInfo, MSG_DNS, ip, strlen(ip));
+
     int err = connect(remoteSock, (struct sockaddr*)&remoteAddr, sizeof(remoteAddr));
     if (err != 0) {
+        char status = STATUS_FAIL_CONNECT;
+        sendRecordToLacal(sockInfo, MSG_STATUS, &status, 1);
         cout << "connect fail:" << sockInfo.header->hostname << endl;
         return 0;
     }
 
     sockInfo.remoteSockInfo = (SockInfo*)calloc(1, sizeof(SockInfo));
     sockContainer.resetSockInfo(*sockInfo.remoteSockInfo);
+    sockInfo.remoteSockInfo->ip = ip;
     sockInfo.remoteSockInfo->sock = remoteSock;
     sockInfo.remoteSockInfo->localSockInfo = &sockInfo;
 
@@ -294,6 +312,8 @@ int initRemoteSock(SockInfo& sockInfo) {
         err = SSL_connect(ssl);
         if (err != 1) {
             int sslErrCode = SSL_get_error(ssl, err);
+            char status = STATUS_FAIL_SSL_CONNECT;
+            sendRecordToLacal(sockInfo, MSG_STATUS, &status, 1);
             cout << "SSL_connect fail:" << sslErrCode << endl;
             return 0;
         }
@@ -322,13 +342,17 @@ int initLocalWebscoket(SockInfo& sockInfo) {
         if (wsFragment) {
             if (wsFragment->opCode == 0x08) { // 关闭
                 sockContainer.shutdownSock(&sockInfo);
+                cout << "ws:close" << endl;
                 break;
             }
             if (wsUtils.fragmentComplete(sockInfo.wsFragment)) { // 消息接收完整
-                unsigned char* msg = wsUtils.getMsg(sockInfo.wsFragment);
+                char* msg = (char*)wsUtils.getMsg(sockInfo.wsFragment);
                 cout << "ws:" << msg << endl;
                 wsUtils.freeFragment(sockInfo.wsFragment);
                 sockInfo.wsFragment = NULL;
+                if (strcmp(msg, "close") == 0) {
+                    sockContainer.shutdownSock(&sockInfo);
+                }
             }
         }
     }
@@ -336,19 +360,28 @@ int initLocalWebscoket(SockInfo& sockInfo) {
     return 0;
 }
 
-void sendRecordToLacal(SockInfo& sockInfo, int type, char* data, size_t size) {
+void sendRecordToLacal(SockInfo& sockInfo, int type, char* data, ssize_t size) {
     if (!sockContainer.wsScokInfo) {
         return;
     }
     WsFragment* fragment = (WsFragment*)calloc(1, sizeof(WsFragment));
+    int index = 0;
     int idSize = sizeof(sockInfo.id);
-    size_t bufSize = 1 + idSize + size;
+    ssize_t bufSize = idSize + 2 + size;
     u_int64_t id = htonll(sockInfo.id);
     unsigned char* msg = (unsigned char*)calloc(bufSize, 1);
 
-    msg[0] = type;
-    memcpy(msg + 1, &id, idSize);
-    memcpy(msg + 1 + idSize, data, size);
+    memcpy(msg, &id, idSize);
+    index += idSize;
+    msg[index++] = type; //1:req, 2:res, 3:ip
+    if (type == 1 || type == 2) {
+        if (sockInfo.header && sockInfo.header->upgrade && strcmp(sockInfo.header->upgrade, "websocket") == 0) {
+            msg[index++] = sockInfo.ssl ? 4 : 3; // wss/ws
+        } else {
+            msg[index++] = sockInfo.ssl ? 2 : 1; // https/http
+        }
+    }
+    memcpy(msg + index, data, size);
 
     fragment->fin = 1;
     fragment->dataLen2 = bufSize;
@@ -364,13 +397,12 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
     HttpHeader* header = NULL;
     char* req = NULL;
     int hasError = 0;
-    size_t reqSize = 0;
+    ssize_t reqSize = 0;
     ssize_t result = 0;
 
     httpUtils.createReqData(sockInfo, req, reqSize);
-
     result = httpUtils.writeData(*sockInfo.remoteSockInfo, req, reqSize); // 转发客户端请求到远程服务器
-    sendRecordToLacal(sockInfo, 1, req, reqSize);
+    free(req);
 
     if (READ_ERROR == result || READ_END == result) {
         return 0;
@@ -399,8 +431,15 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
     }
 
     result = httpUtils.writeData(sockInfo, data, dataSize); // 将远程服务器返回的数据发送给客户端
-    sendRecordToLacal(sockInfo, 2, data, dataSize);
+    sendRecordToLacal(sockInfo, MSG_RES, data, dataSize);
     free(data);
+
+    u_int64_t duration = 0;
+    gettimeofday(&sockInfo.forward_end_tv, NULL);
+    duration = sockInfo.forward_end_tv.tv_sec * 1000000 + sockInfo.forward_end_tv.tv_usec -
+        (sockInfo.forward_start_tv.tv_sec * 1000000 + sockInfo.forward_start_tv.tv_usec);
+    duration = htonll(duration);
+    sendRecordToLacal(sockInfo, MSG_TIME, (char*)(&duration), sizeof(u_int64_t));
 
     if (READ_ERROR == result || READ_END == result) {
         return 0;

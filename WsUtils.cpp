@@ -5,7 +5,7 @@
 
 WsFragment* WsUtils::parseFragment(SockInfo& sockInfo) {
     WsFragment* fragment = (WsFragment*)calloc(1, sizeof(WsFragment));
-    size_t bufSize = sockInfo.bufSize;
+    ssize_t bufSize = sockInfo.bufSize;
     int index = 0;
     unsigned char* buf = (unsigned char*)sockInfo.buf;
 

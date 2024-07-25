@@ -16,10 +16,10 @@ private:
     SockInfo sockInfos[MAX_SOCK];
     pthread_mutex_t sockContainerMutex;
     pthread_mutex_t shutdownMutex;
-    u_int64_t id;
 
 public:
     int timeout;
+    u_int64_t id;
     SockContainer();
     ~SockContainer();
     SockInfo* wsScokInfo; // 本地通信

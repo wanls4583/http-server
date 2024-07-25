@@ -21,8 +21,8 @@ private:
     void checkError(SockInfo& sockInfo, ssize_t bufSize, int& endTryTimes, int& loop, int& hasError);
     HttpHeader* getHttpReqHeader(SockInfo& sockInfo);
     HttpHeader* getHttpResHeader(SockInfo& sockInfo);
-    ssize_t preReadData(SockInfo& sockInfo, char* buf, size_t length);
-    ssize_t readData(SockInfo& sockInfo, char* buf, size_t length);
+    ssize_t preReadData(SockInfo& sockInfo, char* buf, ssize_t length);
+    ssize_t readData(SockInfo& sockInfo, char* buf, ssize_t length);
     ssize_t getSockErr(SockInfo& sockInfo, ssize_t err);
 public:
     HttpUtils();
@@ -33,11 +33,11 @@ public:
     WsFragment* reciveWsFragment(SockInfo& sockInfo, int& hasError);
     void reciveSocksReqHeader(SockInfo& sockInfo, int& hasError);
     void preReciveHeader(SockInfo& sockInfo, int& hasError);
-    void createReqData(SockInfo& sockInfo, char*& req, size_t& reqSize);
+    void createReqData(SockInfo& sockInfo, char*& req, ssize_t& reqSize);
     HttpHeader* reciveHeader(SockInfo& sockInfo, int& hasError);
     ssize_t reciveData(SockInfo& sockInfo);
     ssize_t freeData(SockInfo& sockInfo);
-    ssize_t writeData(SockInfo& sockInfo, char* buf, size_t length);
+    ssize_t writeData(SockInfo& sockInfo, char* buf, ssize_t length);
     ssize_t sendTunnelOk(SockInfo& sockInfo);
     ssize_t sendUpgradeOk(SockInfo& sockInfo);
     ssize_t sendSocksOk(SockInfo& sockInfo);

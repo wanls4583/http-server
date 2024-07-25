@@ -22,9 +22,9 @@ typedef struct SockInfo {
     int isNoCheckSocks;
     int isProxy;
 
-    size_t bufSize;
-    size_t reqSize;
-    size_t bodySize;
+    ssize_t bufSize;
+    ssize_t reqSize;
+    ssize_t bodySize;
 
     char* ip;
     char* tlsHeader;
@@ -35,6 +35,8 @@ typedef struct SockInfo {
     WsFragment* wsFragment;
 
     struct timeval tv;
+    struct timeval forward_start_tv;
+    struct timeval forward_end_tv;
     pthread_t tid;
     pthread_t wsTid;
 } SockInfo;

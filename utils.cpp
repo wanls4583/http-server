@@ -25,7 +25,7 @@ int split(char**& strs, const string& s, const char delim = ' ') {
     return size;
 }
 
-int* getLink(const char* p, size_t pSize) {
+int* getLink(const char* p, ssize_t pSize) {
     int* link = (int*)calloc(1, pSize * sizeof(int));
     link[0] = -1;
     link[1] = 0;
@@ -45,7 +45,7 @@ int* getLink(const char* p, size_t pSize) {
     return link;
 }
 
-int kmpStrstr(const char* s, const char* p, size_t sSize, size_t pSize, size_t start) {
+int kmpStrstr(const char* s, const char* p, ssize_t sSize, ssize_t pSize, ssize_t start) {
     if (pSize > sSize || pSize < 1) {
         return -1;
     }
@@ -80,7 +80,7 @@ char* copyBuf(const char* str) {
     return NULL;
 }
 
-char* sliceBuf(const char* str, size_t start, size_t end) {
+char* sliceBuf(const char* str, ssize_t start, ssize_t end) {
     if (end <= start) {
         return NULL;
     }
@@ -90,7 +90,7 @@ char* sliceBuf(const char* str, size_t start, size_t end) {
     return res;
 }
 
-char* concatBuf(const char* a, const char* b, size_t aSize, size_t bSize) {
+char* concatBuf(const char* a, const char* b, ssize_t aSize, ssize_t bSize) {
     char *res = (char *)calloc(aSize + bSize, 1);
 
     memcpy(res, a, aSize);
@@ -114,7 +114,7 @@ char* runCmd(const char* strCmd) {
     return NULL;
 }
 
-char* readFile(ifstream& inFile, size_t& len) {
+char* readFile(ifstream& inFile, ssize_t& len) {
 
     inFile.seekg(0, inFile.end);
 

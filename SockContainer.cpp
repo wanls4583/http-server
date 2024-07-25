@@ -82,6 +82,10 @@ void SockContainer::resetSockInfo(SockInfo& sockInfo) {
 
     sockInfo.tv.tv_sec = 0;
     sockInfo.tv.tv_usec = 0;
+    sockInfo.forward_start_tv.tv_sec = 0;
+    sockInfo.forward_start_tv.tv_usec = 0;
+    sockInfo.forward_end_tv.tv_sec = 0;
+    sockInfo.forward_end_tv.tv_usec = 0;
     sockInfo.tid = NULL;
     sockInfo.wsTid = NULL;
     pthread_mutex_unlock(&sockContainerMutex);
@@ -136,7 +140,6 @@ SockInfo* SockContainer::getSockInfo() {
             gettimeofday(&(this->sockInfos[i].tv), NULL);
             pthread_mutex_unlock(&sockContainerMutex);
             this->sockInfos[i].sock = 0;
-            this->sockInfos[i].id = this->id++;
             return &this->sockInfos[i];
         }
     }
