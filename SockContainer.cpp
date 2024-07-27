@@ -17,6 +17,9 @@ SockContainer::~SockContainer() {
 }
 
 void SockContainer::freeHeader(HttpHeader* header) {
+    if (!header) {
+        return;
+    }
     free(header->hostname);
     free(header->protocol);
     free(header->originPath);
@@ -39,6 +42,9 @@ void SockContainer::freeHeader(HttpHeader* header) {
 }
 
 void SockContainer::freeSocksReqHeader(SocksReqHeader* header) {
+    if (!header) {
+        return;
+    }
     free(header->addr);
     free(header);
 }
@@ -70,6 +76,7 @@ void SockContainer::resetSockInfo(SockInfo& sockInfo) {
     sockInfo.isNoCheckSSL = 0;
     sockInfo.isNoCheckSocks = 0;
     sockInfo.isProxy = 0;
+    sockInfo.port = 0;
 
     sockInfo.bufSize = 0;
 
@@ -77,8 +84,10 @@ void SockContainer::resetSockInfo(SockInfo& sockInfo) {
     sockInfo.ip = NULL;
     free(sockInfo.buf);
     sockInfo.buf = NULL;
-    wsUtils.freeFragment(sockInfo.wsFragment);
-    sockInfo.wsFragment = NULL;
+    free(sockInfo.cipher);
+    sockInfo.cipher = NULL;
+    free(sockInfo.pem_cert);
+    sockInfo.pem_cert = NULL;
 
     sockInfo.tv.tv_sec = 0;
     sockInfo.tv.tv_usec = 0;

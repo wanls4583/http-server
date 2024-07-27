@@ -1,4 +1,5 @@
 #include "utils.h"
+#include <openssl/ssl.h>
 
 int split(char**& strs, const string& s, const char delim = ' ') {
     vector<string> sv;
@@ -84,14 +85,14 @@ char* sliceBuf(const char* str, ssize_t start, ssize_t end) {
     if (end <= start) {
         return NULL;
     }
-    char *res = (char *)calloc(end - start, 1);
+    char* res = (char*)calloc(end - start, 1);
     memcpy(res, str + start, end - start);
 
     return res;
 }
 
 char* concatBuf(const char* a, const char* b, ssize_t aSize, ssize_t bSize) {
-    char *res = (char *)calloc(aSize + bSize, 1);
+    char* res = (char*)calloc(aSize + bSize, 1);
 
     memcpy(res, a, aSize);
     memcpy(res + aSize, b, bSize);
@@ -127,4 +128,38 @@ char* readFile(ifstream& inFile, ssize_t& len) {
     inFile.read(arr, len);
 
     return arr;
+}
+
+static tm ASN1_GetTm(ASN1_TIME* time) {
+    struct tm t;
+    const char* str = (const char*)time->data;
+    size_t i = 0;
+
+    memset(&t, 0, sizeof(t));
+
+    if (time->type == V_ASN1_UTCTIME) /* two digit year */
+    {
+        t.tm_year = (str[i] - '0') * 10 + (str[i + 1] - '0');
+        i += 2;
+        if (t.tm_year < 70) {
+            t.tm_year += 100;
+        }
+    } else if (time->type == V_ASN1_GENERALIZEDTIME) /* four digit year */
+    {
+        t.tm_year = (str[i] - '0') * 1000 + (str[i + 1] - '0') * 100 + (str[i + 2] - '0') * 10 + (str[i + 3] - '0');
+        t.tm_year -= 1900;
+        i += 4;
+    }
+
+    t.tm_mon = ((str[i] - '0') * 10 + (str[i + 1] - '0')) - 1; // -1 since January is 0 not 1.
+    i += 2;
+    t.tm_mday = (str[i] - '0') * 10 + (str[i + 1] - '0');
+    i += 2;
+    t.tm_hour = (str[i] - '0') * 10 + (str[i + 1] - '0');
+    i += 2;
+    t.tm_min = (str[i] - '0') * 10 + (str[i + 1] - '0');
+    i += 2;
+    t.tm_sec = (str[i] - '0') * 10 + (str[i + 1] - '0');
+
+    return t;
 }

@@ -153,12 +153,9 @@ void WsUtils::freeFragment(WsFragment* fragment) {
     if (fragment->next) {
         freeFragment(fragment->next);
     }
-    if (fragment->maskKey) {
-        free(fragment->maskKey);
-    }
-    if (fragment->data) {
-        free(fragment->data);
-    }
+    free(fragment->maskKey);
+    free(fragment->data);
+    free(fragment);
 }
 
 int WsUtils::fragmentComplete(WsFragment* fragment) {

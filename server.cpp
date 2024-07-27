@@ -17,12 +17,13 @@
 
 using namespace std;
 
-enum { MSG_REQ = 1, MSG_RES, MSG_DNS, MSG_STATUS, MSG_TIME };
+enum { MSG_REQ = 1, MSG_RES, MSG_DNS, MSG_STATUS, MSG_TIME, MSG_CIPHER, MSG_CERT };
 enum { STATUS_FAIL_CONNECT = 1, STATUS_FAIL_SSL_CONNECT };
 
 static int proxyPort = 8000;
 static int servSock;
 static struct sockaddr_in servAddr;
+static pid_t pid;
 
 SockContainer sockContainer;
 TlsUtils tlsUtil;
@@ -45,6 +46,7 @@ int main() {
     addRootCert();
     signal(SIGPIPE, SIG_IGN); // 屏蔽SIGPIPE信号，防止进程退出
     pthread_key_create(&ptKey, NULL);
+    pid = getpid();
     servSock = initServSock();
     if (servSock < 0) {
         return -1;
@@ -60,6 +62,7 @@ int main() {
             pthread_t tid;
 
             (*sockInfo).sock = sock;
+            (*sockInfo).port = ntohs(clntAddr.sin_port);
             (*sockInfo).originSockFlag = fcntl(sock, F_GETFL, 0);
             (*sockInfo).ip = (char*)calloc(strlen(ip) + 1, 1); // inet_ntoa 获取到的地址永远是同一块地址
             memcpy((*sockInfo).ip, ip, strlen(ip));
@@ -231,6 +234,14 @@ void* initClntSock(void* arg) {
             } else {
                 sendRecordToLacal(sockInfo, MSG_DNS, sockInfo.remoteSockInfo->ip, strlen(sockInfo.remoteSockInfo->ip));
             }
+
+            if (sockInfo.remoteSockInfo->cipher) {
+                sendRecordToLacal(sockInfo, MSG_CIPHER, sockInfo.remoteSockInfo->cipher, -1);
+            }
+            if (sockInfo.remoteSockInfo->pem_cert) {
+                sendRecordToLacal(sockInfo, MSG_CERT, sockInfo.remoteSockInfo->pem_cert, -1);
+            }
+
             if (!forward(sockInfo)) {
                 sockContainer.shutdownSock();
                 return NULL;
@@ -316,6 +327,43 @@ int initRemoteSock(SockInfo& sockInfo) {
             sendRecordToLacal(sockInfo, MSG_STATUS, &status, 1);
             cout << "SSL_connect fail:" << sslErrCode << endl;
             return 0;
+        } else {
+            // 获取当前cipher和可选cipher列表--begin
+            char* cipher_buf = (char*)calloc(2000, 1);
+            int index = 0;
+            const char* current_cipher = SSL_get_cipher(ssl); // TLS_AES_128_GCM_SHA256
+            memcpy(cipher_buf, current_cipher, strlen(current_cipher));
+            index += strlen(current_cipher);
+
+            for (int i = 0; ; i++) {
+                const char* cipher = SSL_get_cipher_list(ssl, i);
+                if (cipher) {
+                    cipher_buf[index++] = ';';
+                    memcpy(cipher_buf + index, cipher, strlen(cipher));
+                    index += strlen(cipher);
+                } else {
+                    break;
+                }
+            }
+            sockInfo.remoteSockInfo->cipher = cipher_buf;
+            // 获取当前cipher和可选cipher列表--end
+
+            // 获取服务器证书--begin
+            long size = 0;
+            char* buf = NULL;
+
+            X509* x509 = SSL_get_peer_certificate(ssl);
+            FILE* pemFile = fopen("./tmp.pem", "w+");
+            PEM_write_X509(pemFile, x509);
+
+            size = ftell(pemFile);
+            buf = (char*)calloc(size, 1);
+
+            fseek(pemFile, 0, SEEK_SET);
+            fread(buf, size, 1, pemFile);
+            fclose(pemFile);
+            sockInfo.remoteSockInfo->pem_cert = buf;
+            // 获取服务器证书--end
         }
     }
 
@@ -364,22 +412,37 @@ void sendRecordToLacal(SockInfo& sockInfo, int type, char* data, ssize_t size) {
     if (!sockContainer.wsScokInfo) {
         return;
     }
+    size = size == -1 ? strlen(data) : size;
+
     WsFragment* fragment = (WsFragment*)calloc(1, sizeof(WsFragment));
     int index = 0;
-    int idSize = sizeof(sockInfo.id);
-    ssize_t bufSize = idSize + 2 + size;
+    int idSize = 8;
+    ssize_t bufSize = idSize + 1 + size;
     u_int64_t id = htonll(sockInfo.id);
+
+    if (type == MSG_REQ) {
+        bufSize += 7;
+    }
+
     unsigned char* msg = (unsigned char*)calloc(bufSize, 1);
 
     memcpy(msg, &id, idSize);
     index += idSize;
-    msg[index++] = type; //1:req, 2:res, 3:ip
-    if (type == 1 || type == 2) {
+    msg[index++] = type; // msg_type
+    if (type == MSG_REQ) {
         if (sockInfo.header && sockInfo.header->upgrade && strcmp(sockInfo.header->upgrade, "websocket") == 0) {
             msg[index++] = sockInfo.ssl ? 4 : 3; // wss/ws
         } else {
             msg[index++] = sockInfo.ssl ? 2 : 1; // https/http
         }
+
+        int p = htonl(pid);
+        memcpy(msg + index, &p, 4); // 代理程序进程号
+        index += 4;
+
+        unsigned short pt = htons(sockInfo.port);
+        memcpy(msg + index, &pt, 2); // 客户端的端口
+        index += 2;
     }
     memcpy(msg + index, data, size);
 
@@ -390,6 +453,7 @@ void sendRecordToLacal(SockInfo& sockInfo, int type, char* data, ssize_t size) {
     msg = wsUtils.createMsg(fragment);
     httpUtils.writeData(*sockContainer.wsScokInfo, (char*)msg, fragment->fragmentSize);
     wsUtils.freeFragment(fragment);
+    free(msg);
 }
 
 int forward(SockInfo& sockInfo) { // 转发http/https请求

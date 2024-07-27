@@ -21,6 +21,7 @@ typedef struct SockInfo {
     int isNoCheckSSL;
     int isNoCheckSocks;
     int isProxy;
+    int port;
 
     ssize_t bufSize;
     ssize_t reqSize;
@@ -32,6 +33,8 @@ typedef struct SockInfo {
     char* head;
     char* body;
     char* buf; // 未处理的buf
+    char* cipher;
+    char* pem_cert;
     WsFragment* wsFragment;
 
     struct timeval tv;
