@@ -13,3 +13,4 @@ build
 *.njsproj
 *.sln
 *.sw?
+tmp.pem
