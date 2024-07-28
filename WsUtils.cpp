@@ -1,7 +1,10 @@
 #include <iostream>
 #include "WsUtils.h"
+#include "HttpUtils.h"
 
 #define checkFragment(length, fragment) if((length)<=0){free(fragment);return NULL;}
+
+extern HttpUtils httpUtils;
 
 WsFragment* WsUtils::parseFragment(SockInfo& sockInfo) {
     WsFragment* fragment = (WsFragment*)calloc(1, sizeof(WsFragment));
@@ -201,4 +204,22 @@ unsigned char* WsUtils::getMsg(WsFragment* fragment) {
     }
 
     return msg;
+}
+
+ssize_t WsUtils::sendMsg(SockInfo& sockinfo, unsigned char* msg, u_int64_t size, int fin) {
+    ssize_t bufSize = 0;
+    WsFragment* fragment = (WsFragment*)calloc(1, sizeof(WsFragment));
+    unsigned char* data = (unsigned char*)calloc(size + 1, 1);
+    memcpy(data, msg, size);
+
+    fragment->fin = fin;
+    fragment->dataLen2 = size;
+    fragment->data = data;
+    fragment->opCode = 2;
+
+    msg = createMsg(fragment);
+    bufSize = httpUtils.writeData(sockinfo, (char*)msg, fragment->fragmentSize);
+    freeFragment(fragment);
+
+    return bufSize;
 }

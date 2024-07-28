@@ -17,7 +17,7 @@
 
 using namespace std;
 
-enum { MSG_REQ = 1, MSG_RES, MSG_DNS, MSG_STATUS, MSG_TIME, MSG_CIPHER, MSG_CERT };
+enum { MSG_REQ = 1, MSG_RES, MSG_DNS, MSG_STATUS, MSG_TIME, MSG_CIPHER, MSG_CERT, MSG_PORT };
 enum { STATUS_FAIL_CONNECT = 1, STATUS_FAIL_SSL_CONNECT };
 
 static int proxyPort = 8000;
@@ -54,12 +54,17 @@ int main() {
         struct sockaddr_in clntAddr;
         socklen_t clntAddrLen = sizeof(clntAddr);
         int sock = accept(servSock, (struct sockaddr*)&clntAddr, &clntAddrLen);
+        if (sock < 0) {
+            continue;
+        }
+
         char* ip = inet_ntoa(clntAddr.sin_addr);
         SockInfo* sockInfo = sockContainer.getSockInfo();
         if (sockInfo) {
             pthread_t tid;
 
             (*sockInfo).sock = sock;
+            (*sockInfo).sockId = sockContainer.sockId++;
             (*sockInfo).port = ntohs(clntAddr.sin_port);
             (*sockInfo).originSockFlag = fcntl(sock, F_GETFL, 0);
             (*sockInfo).ip = (char*)calloc(strlen(ip) + 1, 1); // inet_ntoa 获取到的地址永远是同一块地址
@@ -117,6 +122,7 @@ void* initClntSock(void* arg) {
 
     pthread_setspecific(ptKey, arg);
     sockContainer.setNoBlock(sockInfo, 1); // 设置成非阻塞模式
+    sendRecordToLacal(sockInfo, MSG_PORT, NULL, 0);
 
     if (!sockInfo.isNoCheckSSL) {
         httpUtils.preReciveHeader(sockInfo, hasError);
@@ -183,7 +189,7 @@ void* initClntSock(void* arg) {
         return NULL;
     }
 
-    sockInfo.id = sockContainer.id++;
+    sockInfo.reqId = sockContainer.reqId++;
 
     if (strcmp(header->method, "CONNECT") == 0) // 客户端https代理连接请求
     {
@@ -214,6 +220,7 @@ void* initClntSock(void* arg) {
                 !strcmp(sockInfo.header->connnection, "Upgrade") && !strcmp(sockInfo.header->upgrade, "websocket")) {
                 httpUtils.sendUpgradeOk(sockInfo);
                 initLocalWebscoket(sockInfo);
+                return NULL;
             } else {
                 httpUtils.sendFile(sockInfo);
             }
@@ -244,9 +251,15 @@ void* initClntSock(void* arg) {
                 sockContainer.shutdownSock();
                 return NULL;
             }
-            if (sockInfo.remoteSockInfo->header->connnection && strcmp(sockInfo.remoteSockInfo->header->connnection, "close") == 0) { // 远程服务器非长连接
-                sockContainer.shutdownSock();
+
+            if (sockInfo.isWebSock) { // websocket连接
                 return NULL;
+            }
+
+            if (!sockInfo.remoteSockInfo->header->connnection ||
+                sockInfo.remoteSockInfo->header->connnection && strcmp(sockInfo.remoteSockInfo->header->connnection, "close") == 0) { // 远程服务器非长连接
+                sockContainer.shutdownSock(sockInfo.remoteSockInfo);
+                sockInfo.remoteSockInfo = NULL;
             }
         } else {
             sockContainer.shutdownSock();
@@ -254,14 +267,17 @@ void* initClntSock(void* arg) {
         }
 
         if (sockInfo.header) {
-            if (sockInfo.header->connnection && strcmp(sockInfo.header->connnection, "close") == 0) { // 客户端非长连接
+            if (!sockInfo.header->connnection && !sockInfo.header->proxyConnection ||
+                sockInfo.header->connnection && strcmp(sockInfo.header->connnection, "close") == 0 ||
+                sockInfo.header->proxyConnection && strcmp(sockInfo.header->proxyConnection, "close") == 0) { // 客户端非长连接
                 sockContainer.shutdownSock();
             } else {
                 sockContainer.resetSockInfoData(sockInfo);
                 initClntSock(arg);
             }
+        } else {
+            sockContainer.shutdownSock();
         }
-
     }
 
     return NULL;
@@ -373,13 +389,13 @@ int initRemoteSock(SockInfo& sockInfo) {
 int initLocalWebscoket(SockInfo& sockInfo) {
     int hasError = 0;
     if (sockContainer.wsScokInfo) {
-        if (sockContainer.wsScokInfo->sock == sockInfo.sock) {
+        if (sockContainer.wsScokInfo->sockId == sockInfo.sockId) {
             return 0;
         }
         sockContainer.shutdownSock(&sockInfo);
     }
     sockContainer.wsScokInfo = &sockInfo;
-    while (1) {
+    while (sockContainer.wsScokInfo == &sockInfo) {
         WsFragment* wsFragment = httpUtils.reciveWsFragment(sockInfo, hasError);
         if (hasError) {
             sockContainer.shutdownSock(&sockInfo);
@@ -398,6 +414,10 @@ int initLocalWebscoket(SockInfo& sockInfo) {
                 sockInfo.wsFragment = NULL;
                 if (strcmp(msg, "close") == 0) {
                     sockContainer.shutdownSock(&sockInfo);
+                } else if (strcmp(msg, "start") == 0) {
+                    wsUtils.sendMsg(sockInfo, (unsigned char*)"staet", 4);
+                } else if (strcmp(msg, "ping") == 0) {
+                    wsUtils.sendMsg(sockInfo, (unsigned char*)"pong", 4);
                 }
             }
         }
@@ -410,14 +430,15 @@ void sendRecordToLacal(SockInfo& sockInfo, int type, char* data, ssize_t size) {
     if (!sockContainer.wsScokInfo) {
         return;
     }
+    size = !data ? 0 : size;
     size = size == -1 ? strlen(data) : size;
 
-    WsFragment* fragment = (WsFragment*)calloc(1, sizeof(WsFragment));
     int index = 0;
     int idSize = 8;
     int pid = 0;
-    ssize_t bufSize = idSize + 1 + size;
-    u_int64_t id = htonll(sockInfo.id);
+    ssize_t bufSize = idSize * 2 + 1 + size;
+    u_int64_t reqId = htonll(sockInfo.reqId);
+    u_int64_t sockId = htonll(sockInfo.sockId);
 
     if (type == MSG_REQ) {
         bufSize += 7;
@@ -426,13 +447,17 @@ void sendRecordToLacal(SockInfo& sockInfo, int type, char* data, ssize_t size) {
         // if (p) {
         //     pid = atoi(p);
         // }
+    } else if (type == MSG_PORT) {
+        bufSize += 2;
     }
 
     unsigned char* msg = (unsigned char*)calloc(bufSize, 1);
 
-    memcpy(msg, &id, idSize);
-    index += idSize;
     msg[index++] = type; // msg_type
+    memcpy(msg + index, &reqId, idSize);
+    index += idSize;
+    memcpy(msg + index, &sockId, idSize);
+    index += idSize;
     if (type == MSG_REQ) {
         if (sockInfo.header && sockInfo.header->upgrade && strcmp(sockInfo.header->upgrade, "websocket") == 0) {
             msg[index++] = sockInfo.ssl ? 4 : 3; // wss/ws
@@ -447,16 +472,16 @@ void sendRecordToLacal(SockInfo& sockInfo, int type, char* data, ssize_t size) {
         unsigned short pt = htons(sockInfo.port);
         memcpy(msg + index, &pt, 2); // 客户端的端口
         index += 2;
+    } else if (type == MSG_PORT) {
+        unsigned short pt = htons(sockInfo.port);
+        memcpy(msg + index, &pt, 2); // 客户端的端口
+        index += 2;
     }
-    memcpy(msg + index, data, size);
+    if (data && size > 0) {
+        memcpy(msg + index, data, size);
+    }
 
-    fragment->fin = 1;
-    fragment->dataLen2 = bufSize;
-    fragment->data = msg;
-    fragment->opCode = 2;
-    msg = wsUtils.createMsg(fragment);
-    httpUtils.writeData(*sockContainer.wsScokInfo, (char*)msg, fragment->fragmentSize);
-    wsUtils.freeFragment(fragment);
+    wsUtils.sendMsg(*sockContainer.wsScokInfo, msg, bufSize);
     free(msg);
 }
 
@@ -514,13 +539,17 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
     }
 
     if (header->status == 101 && header->upgrade && strcmp(header->upgrade, "websocket") == 0) { // webscoket连接成功
-        pthread_t localTid, remoteTid;
-        sockInfo.wsTid = localTid;
-        sockInfo.remoteSockInfo->wsTid = remoteTid;
+        pthread_t localTid;
+        pthread_t remoteTid;
+
         pthread_create(&localTid, NULL, forwardWebocket, &sockInfo);
         pthread_detach(localTid);
         pthread_create(&remoteTid, NULL, forwardWebocket, sockInfo.remoteSockInfo);
         pthread_detach(remoteTid);
+
+        // pthread_t为结构体，引用赋值需要再初始化以后再赋值，否则里面的元素是空的
+        sockInfo.wsTid = localTid;
+        sockInfo.remoteSockInfo->wsTid = remoteTid;
     }
 
     return 1;

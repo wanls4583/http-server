@@ -590,6 +590,10 @@ ssize_t HttpUtils::preReadData(SockInfo& sockInfo, char* buf, ssize_t length) {
     ssize_t err;
     ssize_t result;
 
+    if (sockInfo.sock <= 0) {
+        return READ_ERROR;
+    }
+
     err = recv(sockInfo.sock, buf, length, MSG_PEEK); // MSG_PEEK查看传入数据，数据将复制到缓冲区中，但不会从输入队列中删除
 
     result = this->getSockErr(sockInfo, err);
@@ -605,6 +609,10 @@ ssize_t HttpUtils::preReadData(SockInfo& sockInfo, char* buf, ssize_t length) {
 ssize_t HttpUtils::readData(SockInfo& sockInfo, char* buf, ssize_t length) {
     ssize_t err;
     ssize_t result;
+
+    if (sockInfo.sock <= 0) {
+        return READ_ERROR;
+    }
 
     if (sockInfo.ssl == NULL) {
         err = read(sockInfo.sock, buf, length);
@@ -627,6 +635,9 @@ ssize_t HttpUtils::writeData(SockInfo& sockInfo, char* buf, ssize_t length) {
     ssize_t result = READ_AGAIN;
     ssize_t count = 0;
     while (count < length) {
+        if (sockInfo.sock <= 0) {
+            return READ_ERROR;
+        }
         if (sockInfo.ssl == NULL) {
             err = write(sockInfo.sock, buf + count, length - count);
         } else {

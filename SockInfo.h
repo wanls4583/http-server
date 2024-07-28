@@ -13,7 +13,8 @@ typedef struct SockInfo {
     SockInfo* remoteSockInfo;
     SockInfo* localSockInfo;
 
-    u_int64_t id;
+    u_int64_t reqId;
+    u_int64_t sockId;
     int sock;
     int closing;
     int originSockFlag;
@@ -21,6 +22,7 @@ typedef struct SockInfo {
     int isNoCheckSSL;
     int isNoCheckSocks;
     int isProxy;
+    int isWebSock;
     int port;
 
     ssize_t bufSize;

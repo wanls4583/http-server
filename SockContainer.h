@@ -19,7 +19,8 @@ private:
 
 public:
     int timeout;
-    u_int64_t id;
+    u_int64_t reqId; // 每个请求的id唯一
+    u_int64_t sockId; // 每个连接的id（一个连接可能有多个请求）
     SockContainer();
     ~SockContainer();
     SockInfo* wsScokInfo; // 本地通信

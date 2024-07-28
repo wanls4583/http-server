@@ -6,7 +6,7 @@ extern WsUtils wsUtils;
 extern SockContainer sockContainer;
 extern pthread_key_t ptKey;
 
-SockContainer::SockContainer(): timeout(60), id(1) {
+SockContainer::SockContainer(): timeout(60), reqId(1), sockId(1) {
     pthread_mutex_init(&sockContainerMutex, NULL);
     pthread_mutex_init(&shutdownMutex, NULL);
     this->initSockInfos();
@@ -55,8 +55,20 @@ void SockContainer::resetSockInfo(SockInfo& sockInfo) {
     if (sockInfo.remoteSockInfo) {
         pthread_mutex_unlock(&sockContainerMutex);
         this->resetSockInfo(*sockInfo.remoteSockInfo);
+        pthread_mutex_lock(&sockContainerMutex);
+
         free(sockInfo.remoteSockInfo);
         sockInfo.remoteSockInfo = NULL;
+    }
+
+    if (sockInfo.wsTid) {
+        pthread_cancel(sockInfo.wsTid);
+        sockInfo.wsTid = NULL;
+    }
+
+    if (sockInfo.tid) {
+        pthread_cancel(sockInfo.tid);
+        sockInfo.tid = NULL;
     }
 
     if (sockContainer.wsScokInfo == &sockInfo) {
@@ -68,7 +80,8 @@ void SockContainer::resetSockInfo(SockInfo& sockInfo) {
     sockInfo.ssl = NULL;
     sockInfo.localSockInfo = NULL;
 
-    sockInfo.id = -1;
+    sockInfo.reqId = 0;
+    sockInfo.sockId = 0;
     sockInfo.sock = -1;
     sockInfo.closing = 0;
     sockInfo.originSockFlag = 0;
@@ -76,6 +89,7 @@ void SockContainer::resetSockInfo(SockInfo& sockInfo) {
     sockInfo.isNoCheckSSL = 0;
     sockInfo.isNoCheckSocks = 0;
     sockInfo.isProxy = 0;
+    sockInfo.isWebSock = 0;
     sockInfo.port = 0;
 
     sockInfo.bufSize = 0;
@@ -95,8 +109,6 @@ void SockContainer::resetSockInfo(SockInfo& sockInfo) {
     sockInfo.forward_start_tv.tv_usec = 0;
     sockInfo.forward_end_tv.tv_sec = 0;
     sockInfo.forward_end_tv.tv_usec = 0;
-    sockInfo.tid = NULL;
-    sockInfo.wsTid = NULL;
     pthread_mutex_unlock(&sockContainerMutex);
 }
 
@@ -171,12 +183,8 @@ void SockContainer::shutdownSock(SockInfo* sockInfo) {
         this->closeSock(*sockInfo->remoteSockInfo);
     }
     this->closeSock(*sockInfo);
-    pthread_t tid = sockInfo->tid;
-    pthread_t wsTid = sockInfo->wsTid;
     pthread_mutex_unlock(&shutdownMutex);
     this->resetSockInfo(*sockInfo);
-    pthread_cancel(tid);
-    pthread_cancel(wsTid);
 }
 
 void SockContainer::closeSock(SockInfo& sockInfo) {
