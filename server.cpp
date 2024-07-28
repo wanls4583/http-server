@@ -23,7 +23,6 @@ enum { STATUS_FAIL_CONNECT = 1, STATUS_FAIL_SSL_CONNECT };
 static int proxyPort = 8000;
 static int servSock;
 static struct sockaddr_in servAddr;
-static pid_t pid;
 
 SockContainer sockContainer;
 TlsUtils tlsUtil;
@@ -46,7 +45,6 @@ int main() {
     addRootCert();
     signal(SIGPIPE, SIG_IGN); // 屏蔽SIGPIPE信号，防止进程退出
     pthread_key_create(&ptKey, NULL);
-    pid = getpid();
     servSock = initServSock();
     if (servSock < 0) {
         return -1;
@@ -417,11 +415,17 @@ void sendRecordToLacal(SockInfo& sockInfo, int type, char* data, ssize_t size) {
     WsFragment* fragment = (WsFragment*)calloc(1, sizeof(WsFragment));
     int index = 0;
     int idSize = 8;
+    int pid = 0;
     ssize_t bufSize = idSize + 1 + size;
     u_int64_t id = htonll(sockInfo.id);
 
     if (type == MSG_REQ) {
         bufSize += 7;
+        // 频繁使用popen调用命令行将导致内存泄漏
+        // char* p = findPidByPort(sockInfo.port);
+        // if (p) {
+        //     pid = atoi(p);
+        // }
     }
 
     unsigned char* msg = (unsigned char*)calloc(bufSize, 1);
@@ -545,15 +549,19 @@ void addRootCert() {
     string cmd = "security find-certificate -c ";
     char* cn = tlsUtil.certUtils.getRootCertNameByOid((char*)"2.5.4.3");
     char* cmdRes = runCmd((cmd + string(cn)).c_str());
-    if (string(cmdRes).find("keychain:") != 0) { // 安装证书
-        runCmd("security add-trusted-cert -r trustRoot -k ~/Library/Keychains/login.keychain-db rootCA/rootCA.crt ");
+    if (cmdRes && string(cmdRes).find("keychain:") != 0) { // 安装证书
+        free(cmdRes);
+        cmdRes = runCmd("security add-trusted-cert -r trustRoot -k ~/Library/Keychains/login.keychain-db rootCA/rootCA.crt ");
+        free(cmdRes);
     }
     // 设置http代理
-    runCmd(("networksetup -setwebproxy Wi-Fi 127.0.0.1 " + to_string(proxyPort)).c_str());
+    cmdRes = runCmd(("networksetup -setwebproxy Wi-Fi 127.0.0.1 " + to_string(proxyPort)).c_str());
+    free(cmdRes);
     // 设置https代理
-    runCmd(("networksetup -setsecurewebproxy Wi-Fi 127.0.0.1 " + to_string(proxyPort)).c_str());
+    cmdRes = runCmd(("networksetup -setsecurewebproxy Wi-Fi 127.0.0.1 " + to_string(proxyPort)).c_str());
+    free(cmdRes);
     // 设置socket代理
-    runCmd(("networksetup -setsocksfirewallproxy Wi-Fi 127.0.0.1 " + to_string(proxyPort)).c_str());
+    cmdRes = runCmd(("networksetup -setsocksfirewallproxy Wi-Fi 127.0.0.1 " + to_string(proxyPort)).c_str());
     free(cmdRes);
 }
 
@@ -563,11 +571,12 @@ void setProxyPort() {
     for (; proxyPort < 65536; proxyPort++) {
         cmd = "lsof -i tcp:" + to_string(proxyPort);
         cmdRes = runCmd(cmd.c_str());
-        if (string(cmdRes).size() > 0) {
+        if (cmdRes && string(cmdRes).size() > 0) {
             continue;
         } else {
             break;
         }
     }
+    free(cmdRes);
     cout << "proxyPort: " << proxyPort << endl;
 }
