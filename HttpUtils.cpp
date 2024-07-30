@@ -618,7 +618,7 @@ ssize_t HttpUtils::preReadData(SockInfo& sockInfo, char* buf, ssize_t length) {
     result = this->getSockErr(sockInfo, err);
 
     if (result > 0 && READ_AGAIN != result) {
-        gettimeofday(&sockInfo.tv, NULL); // 重置超时时间
+        timespec_get(&sockInfo.tv, TIME_UTC); // 重置超时时间
     }
 
     return result;
@@ -642,7 +642,7 @@ ssize_t HttpUtils::readData(SockInfo& sockInfo, char* buf, ssize_t length) {
     result = this->getSockErr(sockInfo, err);
 
     if (result > 0 && READ_AGAIN != result) {
-        gettimeofday(&sockInfo.tv, NULL); // 重置超时时间
+        timespec_get(&sockInfo.tv, TIME_UTC); // 重置超时时间
     }
 
     return result;
@@ -673,7 +673,7 @@ ssize_t HttpUtils::writeData(SockInfo& sockInfo, char* buf, ssize_t length) {
     }
 
     if (result > 0) {
-        gettimeofday(&sockInfo.tv, NULL); // 重置超时时间
+        timespec_get(&sockInfo.tv, TIME_UTC); // 重置超时时间
     }
 
     return result;

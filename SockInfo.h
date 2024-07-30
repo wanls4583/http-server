@@ -39,9 +39,7 @@ typedef struct SockInfo {
     char* pem_cert;
     WsFragment* wsFragment;
 
-    struct timeval tv;
-    struct timeval forward_start_tv;
-    struct timeval forward_end_tv;
+    struct timespec tv;
     pthread_t tid;
     pthread_t wsTid;
 } SockInfo;

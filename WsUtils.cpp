@@ -55,8 +55,7 @@ WsFragment* WsUtils::parseFragment(SockInfo& sockInfo) {
         fragment->fragmentSize += fragment->dataLen;
     }
 
-    if (fragment->mask) {
-        checkFragment(bufSize - 4, fragment);
+    if (fragment->mask && bufSize >= 4) {
         fragment->maskKey = (unsigned char*)calloc(4, 1);
         memcpy(fragment->maskKey, buf + index, 4);
         bufSize -= 4;
@@ -206,16 +205,16 @@ unsigned char* WsUtils::getMsg(WsFragment* fragment) {
     return msg;
 }
 
-ssize_t WsUtils::sendMsg(SockInfo& sockinfo, unsigned char* msg, u_int64_t size, int fin) {
+ssize_t WsUtils::sendMsg(SockInfo& sockinfo, unsigned char* msg, u_int64_t size, int fin, int opCode) {
     ssize_t bufSize = 0;
     WsFragment* fragment = (WsFragment*)calloc(1, sizeof(WsFragment));
     unsigned char* data = (unsigned char*)calloc(size + 1, 1);
     memcpy(data, msg, size);
 
     fragment->fin = fin;
+    fragment->opCode = opCode;
     fragment->dataLen2 = size;
     fragment->data = data;
-    fragment->opCode = 2;
 
     msg = createMsg(fragment);
     bufSize = httpUtils.writeData(sockinfo, (char*)msg, fragment->fragmentSize);

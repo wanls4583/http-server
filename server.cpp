@@ -417,6 +417,7 @@ int initLocalWebscoket(SockInfo& sockInfo) {
         if (wsFragment) {
             if (wsFragment->opCode == 0x08) { // 关闭
                 sockContainer.shutdownSock(&sockInfo);
+                sockContainer.wsScokInfo = NULL;
                 cout << "ws:close" << endl;
                 break;
             }
@@ -428,7 +429,7 @@ int initLocalWebscoket(SockInfo& sockInfo) {
                 if (strcmp(msg, "close") == 0) {
                     sockContainer.shutdownSock(&sockInfo);
                 } else if (strcmp(msg, "start") == 0) {
-                    wsUtils.sendMsg(sockInfo, (unsigned char*)"staet", 4);
+                    wsUtils.sendMsg(sockInfo, (unsigned char*)"start", 5);
                 } else if (strcmp(msg, "ping") == 0) {
                     wsUtils.sendMsg(sockInfo, (unsigned char*)"pong", 4);
                 }
@@ -440,10 +441,13 @@ int initLocalWebscoket(SockInfo& sockInfo) {
 }
 
 void sendTimeToLacal(SockInfo& sockInfo, int timeType) {
-    timeval tv;
-    gettimeofday(&tv, NULL);
+    if (!sockContainer.wsScokInfo) {
+        return;
+    }
+    timespec tv;
+    timespec_get(&tv, TIME_UTC);
 
-    u_int64_t t = tv.tv_sec * 100000 + tv.tv_usec;
+    u_int64_t t = (u_int64_t)tv.tv_sec * 1000000 + (u_int64_t)tv.tv_nsec / 1000;
     t = htonll(t);
 
     char* msg = (char*)calloc(sizeof(u_int64_t) + 2, 1);
@@ -509,7 +513,7 @@ void sendRecordToLacal(SockInfo& sockInfo, int type, char* data, ssize_t size) {
         memcpy(msg + index, data, size);
     }
 
-    wsUtils.sendMsg(*sockContainer.wsScokInfo, msg, bufSize);
+    wsUtils.sendMsg(*sockContainer.wsScokInfo, msg, bufSize, 1, 2);
     free(msg);
 }
 

@@ -104,11 +104,7 @@ void SockContainer::resetSockInfo(SockInfo& sockInfo) {
     sockInfo.pem_cert = NULL;
 
     sockInfo.tv.tv_sec = 0;
-    sockInfo.tv.tv_usec = 0;
-    sockInfo.forward_start_tv.tv_sec = 0;
-    sockInfo.forward_start_tv.tv_usec = 0;
-    sockInfo.forward_end_tv.tv_sec = 0;
-    sockInfo.forward_end_tv.tv_usec = 0;
+    sockInfo.tv.tv_nsec = 0;
     pthread_mutex_unlock(&sockContainerMutex);
 }
 
@@ -158,7 +154,7 @@ SockInfo* SockContainer::getSockInfo() {
     pthread_mutex_lock(&sockContainerMutex);
     for (int i = 0; i < MAX_SOCK; i++) {
         if (this->sockInfos[i].sock == -1 && !this->sockInfos[i].closing) {
-            gettimeofday(&(this->sockInfos[i].tv), NULL);
+            timespec_get(&(this->sockInfos[i].tv), TIME_UTC);
             pthread_mutex_unlock(&sockContainerMutex);
             this->sockInfos[i].sock = 0;
             return &this->sockInfos[i];
@@ -199,10 +195,10 @@ void SockContainer::closeSock(SockInfo& sockInfo) {
 }
 
 int SockContainer::checkSockTimeout(SockInfo& sockInfo) {
-    struct timeval tv;
+    struct timespec tv;
     const int us = 1000000;
-    gettimeofday(&tv, NULL);
-    if ((tv.tv_sec * us + tv.tv_usec) - (sockInfo.tv.tv_sec * us + sockInfo.tv.tv_usec) > this->timeout * us) {
+    timespec_get(&tv, TIME_UTC);
+    if ((tv.tv_sec * us + tv.tv_nsec / 1000) - (sockInfo.tv.tv_sec * us + sockInfo.tv.tv_nsec / 1000) > this->timeout * us) {
         return 0;
     }
     return 1;
