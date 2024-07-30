@@ -565,6 +565,25 @@ void HttpUtils::reciveSocksReqHeader(SockInfo& sockInfo, int& hasError) {
     }
 }
 
+ssize_t HttpUtils::waiteData(SockInfo& sockInfo) {
+    ssize_t bufSize = 0;
+    int loop = 0, hasError = 0, endTryTimes = 0;
+    char buf[1];
+    while (bufSize <= 0) {
+        bufSize = preReadData(sockInfo, buf, 1);
+        checkError(sockInfo, bufSize, endTryTimes, loop, hasError);
+
+        if (hasError) {
+            return 1;
+        } else if (loop) {
+            loop = 0;
+            continue;
+        }
+    }
+
+    return 0;
+}
+
 ssize_t HttpUtils::reciveData(SockInfo& sockInfo) {
     char buf[1024 * 10];
     ssize_t bufSize = this->readData(sockInfo, buf, sizeof(buf));
@@ -590,7 +609,7 @@ ssize_t HttpUtils::preReadData(SockInfo& sockInfo, char* buf, ssize_t length) {
     ssize_t err;
     ssize_t result;
 
-    if (sockInfo.sock <= 0) {
+    if (sockInfo.sockId <= 0) {
         return READ_ERROR;
     }
 
@@ -610,7 +629,7 @@ ssize_t HttpUtils::readData(SockInfo& sockInfo, char* buf, ssize_t length) {
     ssize_t err;
     ssize_t result;
 
-    if (sockInfo.sock <= 0) {
+    if (sockInfo.sockId <= 0) {
         return READ_ERROR;
     }
 
@@ -635,7 +654,7 @@ ssize_t HttpUtils::writeData(SockInfo& sockInfo, char* buf, ssize_t length) {
     ssize_t result = READ_AGAIN;
     ssize_t count = 0;
     while (count < length) {
-        if (sockInfo.sock <= 0) {
+        if (sockInfo.sockId <= 0) {
             return READ_ERROR;
         }
         if (sockInfo.ssl == NULL) {

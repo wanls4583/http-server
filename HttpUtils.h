@@ -35,6 +35,7 @@ public:
     void preReciveHeader(SockInfo& sockInfo, int& hasError);
     void createReqData(SockInfo& sockInfo, char*& req, ssize_t& reqSize);
     HttpHeader* reciveHeader(SockInfo& sockInfo, int& hasError);
+    ssize_t waiteData(SockInfo& sockInfo);
     ssize_t reciveData(SockInfo& sockInfo);
     ssize_t freeData(SockInfo& sockInfo);
     ssize_t writeData(SockInfo& sockInfo, char* buf, ssize_t length);

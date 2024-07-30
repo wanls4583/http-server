@@ -19,6 +19,7 @@ using namespace std;
 
 enum { MSG_REQ = 1, MSG_RES, MSG_DNS, MSG_STATUS, MSG_TIME, MSG_CIPHER, MSG_CERT, MSG_PORT };
 enum { STATUS_FAIL_CONNECT = 1, STATUS_FAIL_SSL_CONNECT };
+enum { TIME_DNS_START = 1, TIME_DNS_END, TIME_CONNECT_START, TIME_CONNECT_END, TIME_CONNECT_SSL_START, TIME_CONNECT_SSL_END, TIME_REQ_START, TIME_REQ_END, TIME_RES_START, TIME_RES_END };
 
 static int proxyPort = 8000;
 static int servSock;
@@ -39,6 +40,7 @@ int initLocalWebscoket(SockInfo& sockInfo);
 void setProxyPort();
 void addRootCert();
 void sendRecordToLacal(SockInfo& sockInfo, int type, char* data, ssize_t size);
+void sendTimeToLacal(SockInfo& sockInfo, int timeType);
 
 int main() {
     setProxyPort();
@@ -135,6 +137,30 @@ void* initClntSock(void* arg) {
             ssl = sockInfo.ssl = tlsUtil.getSSL(sockInfo);
             sockContainer.setNoBlock(sockInfo, 1); // 设置成非阻塞模式
             sockInfo.isNoCheckSocks = 1;
+
+            // 获取当前cipher和可选cipher列表--begin
+            char* cipher_buf = (char*)calloc(2000, 1);
+            int index = 0;
+            const char* version = SSL_get_version(ssl);
+            const char* current_cipher = SSL_get_cipher(ssl); // TLS_AES_128_GCM_SHA256
+            memcpy(cipher_buf, version, strlen(version));
+            index += strlen(version);
+            cipher_buf[index++] = ';';
+            memcpy(cipher_buf + index, current_cipher, strlen(current_cipher));
+            index += strlen(current_cipher);
+
+            STACK_OF(SSL_CIPHER)* ciphers = SSL_get_client_ciphers(ssl);
+            for (int i = 0; i < sk_SSL_CIPHER_num(ciphers); i++) {
+                const SSL_CIPHER* c = sk_SSL_CIPHER_value(ciphers, i);
+                const char* cipher = SSL_CIPHER_get_name(c);
+                if (cipher) {
+                    cipher_buf[index++] = ';';
+                    memcpy(cipher_buf + index, cipher, strlen(cipher));
+                    index += strlen(cipher);
+                }
+            }
+            sockInfo.cipher = cipher_buf;
+            // 获取当前cipher和可选cipher列表--end
         }
         sockContainer.resetSockInfoData(sockInfo); // 清除掉 CONNECT 请求的数据
         sockInfo.isNoCheckSSL = 1;
@@ -229,7 +255,9 @@ void* initClntSock(void* arg) {
             ssize_t reqSize;
             httpUtils.createReqData(sockInfo, req, reqSize);
             sendRecordToLacal(sockInfo, MSG_REQ, req, reqSize);
-            gettimeofday(&sockInfo.forward_start_tv, NULL);
+            if (sockInfo.cipher) {
+                sendRecordToLacal(sockInfo, MSG_CIPHER, sockInfo.cipher, -1);
+            }
 
             if (!sockInfo.remoteSockInfo) { // 新建远程连接
                 if (!initRemoteSock(sockInfo)) {
@@ -240,9 +268,6 @@ void* initClntSock(void* arg) {
                 sendRecordToLacal(sockInfo, MSG_DNS, sockInfo.remoteSockInfo->ip, strlen(sockInfo.remoteSockInfo->ip));
             }
 
-            if (sockInfo.remoteSockInfo->cipher) {
-                sendRecordToLacal(sockInfo, MSG_CIPHER, sockInfo.remoteSockInfo->cipher, -1);
-            }
             if (sockInfo.remoteSockInfo->pem_cert) {
                 sendRecordToLacal(sockInfo, MSG_CERT, sockInfo.remoteSockInfo->pem_cert, -1);
             }
@@ -284,13 +309,15 @@ void* initClntSock(void* arg) {
 }
 
 int initRemoteSock(SockInfo& sockInfo) {
+    sendTimeToLacal(sockInfo, TIME_DNS_START);
     struct hostent* host = gethostbyname(sockInfo.header->hostname);
+    sendTimeToLacal(sockInfo, TIME_DNS_END);
 
     if (!host || !host->h_length) {
         sockContainer.shutdownSock();
         return 0;
     }
-
+    // https://securepubads.g.doubleclick.net/pcs/view
     // char **pptr = host->h_addr_list;
     // char str[INET_ADDRSTRLEN];
     // for (int i = 0; *pptr != NULL; pptr++, i++) {
@@ -309,6 +336,7 @@ int initRemoteSock(SockInfo& sockInfo) {
     inet_ntop(host->h_addrtype, host->h_addr_list[0], ip, INET_ADDRSTRLEN);
     sendRecordToLacal(sockInfo, MSG_DNS, ip, strlen(ip));
 
+    sendTimeToLacal(sockInfo, TIME_CONNECT_START);
     int err = connect(remoteSock, (struct sockaddr*)&remoteAddr, sizeof(remoteAddr));
     if (err != 0) {
         char status = STATUS_FAIL_CONNECT;
@@ -316,9 +344,12 @@ int initRemoteSock(SockInfo& sockInfo) {
         cout << "connect fail:" << sockInfo.header->hostname << endl;
         return 0;
     }
+    sendTimeToLacal(sockInfo, TIME_CONNECT_END);
 
     sockInfo.remoteSockInfo = (SockInfo*)calloc(1, sizeof(SockInfo));
     sockContainer.resetSockInfo(*sockInfo.remoteSockInfo);
+    sockInfo.remoteSockInfo->sockId = sockInfo.sockId; // preReadData|readData|writeData会判断该id
+    sockInfo.remoteSockInfo->reqId = sockInfo.reqId;
     sockInfo.remoteSockInfo->ip = ip;
     sockInfo.remoteSockInfo->sock = remoteSock;
     sockInfo.remoteSockInfo->localSockInfo = &sockInfo;
@@ -334,7 +365,9 @@ int initRemoteSock(SockInfo& sockInfo) {
         // 将主机名称写入 ClientHello 消息中的 ServerName 扩展字段中，有些服务器建立 TLS 连接时可能会校验该字段
         SSL_set_tlsext_host_name(ssl, sockInfo.header->hostname);
 
+        sendTimeToLacal(sockInfo, TIME_CONNECT_SSL_START);
         err = SSL_connect(ssl);
+        sendTimeToLacal(sockInfo, TIME_CONNECT_SSL_END);
         if (err != 1) {
             int sslErrCode = SSL_get_error(ssl, err);
             char status = STATUS_FAIL_SSL_CONNECT;
@@ -342,26 +375,6 @@ int initRemoteSock(SockInfo& sockInfo) {
             cout << "SSL_connect fail:" << sslErrCode << endl;
             return 0;
         } else {
-            // 获取当前cipher和可选cipher列表--begin
-            char* cipher_buf = (char*)calloc(2000, 1);
-            int index = 0;
-            const char* current_cipher = SSL_get_cipher(ssl); // TLS_AES_128_GCM_SHA256
-            memcpy(cipher_buf, current_cipher, strlen(current_cipher));
-            index += strlen(current_cipher);
-
-            for (int i = 0; ; i++) {
-                const char* cipher = SSL_get_cipher_list(ssl, i);
-                if (cipher) {
-                    cipher_buf[index++] = ';';
-                    memcpy(cipher_buf + index, cipher, strlen(cipher));
-                    index += strlen(cipher);
-                } else {
-                    break;
-                }
-            }
-            sockInfo.remoteSockInfo->cipher = cipher_buf;
-            // 获取当前cipher和可选cipher列表--end
-
             // 获取服务器证书--begin
             long size = 0;
             char* buf = NULL;
@@ -424,6 +437,21 @@ int initLocalWebscoket(SockInfo& sockInfo) {
     }
 
     return 0;
+}
+
+void sendTimeToLacal(SockInfo& sockInfo, int timeType) {
+    timeval tv;
+    gettimeofday(&tv, NULL);
+
+    u_int64_t t = tv.tv_sec * 100000 + tv.tv_usec;
+    t = htonll(t);
+
+    char* msg = (char*)calloc(sizeof(u_int64_t) + 2, 1);
+    msg[0] = timeType;
+    memcpy(msg + 1, &t, sizeof(u_int64_t));
+
+    sendRecordToLacal(sockInfo, MSG_TIME, msg, sizeof(u_int64_t) + 1);
+    free(msg);
 }
 
 void sendRecordToLacal(SockInfo& sockInfo, int type, char* data, ssize_t size) {
@@ -494,14 +522,19 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
     ssize_t result = 0;
 
     httpUtils.createReqData(sockInfo, req, reqSize);
+    sendTimeToLacal(sockInfo, TIME_REQ_START);
     result = httpUtils.writeData(*sockInfo.remoteSockInfo, req, reqSize); // 转发客户端请求到远程服务器
+    sendTimeToLacal(sockInfo, TIME_REQ_END);
     free(req);
 
     if (READ_ERROR == result || READ_END == result) {
         return 0;
     }
 
+    httpUtils.waiteData(*sockInfo.remoteSockInfo);
+    sendTimeToLacal(sockInfo, TIME_RES_START);
     header = httpUtils.reciveHeader(*sockInfo.remoteSockInfo, hasError); // 读取远程服务器的响应头
+    sendTimeToLacal(sockInfo, TIME_RES_END);
 
     if (hasError) {
         return 0;
@@ -526,13 +559,6 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
     result = httpUtils.writeData(sockInfo, data, dataSize); // 将远程服务器返回的数据发送给客户端
     sendRecordToLacal(sockInfo, MSG_RES, data, dataSize);
     free(data);
-
-    u_int64_t duration = 0;
-    gettimeofday(&sockInfo.forward_end_tv, NULL);
-    duration = sockInfo.forward_end_tv.tv_sec * 1000000 + sockInfo.forward_end_tv.tv_usec -
-        (sockInfo.forward_start_tv.tv_sec * 1000000 + sockInfo.forward_start_tv.tv_usec);
-    duration = htonll(duration);
-    sendRecordToLacal(sockInfo, MSG_TIME, (char*)(&duration), sizeof(u_int64_t));
 
     if (READ_ERROR == result || READ_END == result) {
         return 0;
