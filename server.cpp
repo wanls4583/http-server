@@ -314,6 +314,7 @@ int initRemoteSock(SockInfo& sockInfo) {
     sendTimeToLacal(sockInfo, TIME_DNS_END);
 
     if (!host || !host->h_length) {
+        usleep(1000 * 500); // 留出时间供客户端根据端口查询进程
         sockContainer.shutdownSock();
         return 0;
     }
