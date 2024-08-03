@@ -143,7 +143,9 @@ unsigned char* WsUtils::createMsg(WsFragment* fragment) {
         index += 4;
     }
 
-    memcpy(msg + index, fragment->data, dataLen);
+    if (dataLen > 0) {
+        memcpy(msg + index, fragment->data, dataLen);
+    }
 
     return msg;
 }
@@ -208,8 +210,11 @@ unsigned char* WsUtils::getMsg(WsFragment* fragment) {
 ssize_t WsUtils::sendMsg(SockInfo& sockinfo, unsigned char* msg, u_int64_t size, int fin, int opCode) {
     ssize_t bufSize = 0;
     WsFragment* fragment = (WsFragment*)calloc(1, sizeof(WsFragment));
-    unsigned char* data = (unsigned char*)calloc(size + 1, 1);
-    memcpy(data, msg, size);
+    unsigned char* data = NULL;
+    if (size > 0) {
+        data = (unsigned char*)calloc(size + 1, 1);
+        memcpy(data, msg, size);
+    }
 
     fragment->fin = fin;
     fragment->opCode = opCode;
@@ -221,4 +226,8 @@ ssize_t WsUtils::sendMsg(SockInfo& sockinfo, unsigned char* msg, u_int64_t size,
     freeFragment(fragment);
 
     return bufSize;
+}
+
+ssize_t WsUtils::close(SockInfo& sockinfo) {
+    return sendMsg(sockinfo, NULL, 0, 1, 0x08);
 }

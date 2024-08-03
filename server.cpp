@@ -30,6 +30,7 @@ TlsUtils tlsUtil;
 HttpUtils httpUtils;
 WsUtils wsUtils;
 pthread_key_t ptKey;
+pthread_mutex_t serverMutex;
 
 int initServSock();
 void* initClntSock(void* arg);
@@ -46,6 +47,7 @@ int main() {
     setProxyPort();
     addRootCert();
     signal(SIGPIPE, SIG_IGN); // 屏蔽SIGPIPE信号，防止进程退出
+    pthread_mutex_init(&serverMutex, NULL);
     pthread_key_create(&ptKey, NULL);
     servSock = initServSock();
     if (servSock < 0) {
@@ -379,8 +381,9 @@ int initRemoteSock(SockInfo& sockInfo) {
             // 获取服务器证书--begin
             long size = 0;
             char* buf = NULL;
-
             X509* x509 = SSL_get_peer_certificate(ssl);
+
+            pthread_mutex_lock(&serverMutex);
             FILE* pemFile = fopen("./tmp.pem", "w+");
             PEM_write_X509(pemFile, x509);
 
@@ -390,6 +393,8 @@ int initRemoteSock(SockInfo& sockInfo) {
             fseek(pemFile, 0, SEEK_SET);
             fread(buf, size, 1, pemFile);
             fclose(pemFile);
+            pthread_mutex_unlock(&serverMutex);
+
             sockInfo.remoteSockInfo->pem_cert = buf;
             // 获取服务器证书--end
         }
@@ -406,7 +411,9 @@ int initLocalWebscoket(SockInfo& sockInfo) {
         if (sockContainer.wsScokInfo->sockId == sockInfo.sockId) {
             return 0;
         }
-        sockContainer.shutdownSock(&sockInfo);
+        wsUtils.close(*sockContainer.wsScokInfo); // 发送关闭祯
+        usleep(1000); // 等客户端处理完关闭祯在断开连接
+        sockContainer.shutdownSock(sockContainer.wsScokInfo);
     }
     sockContainer.wsScokInfo = &sockInfo;
     while (sockContainer.wsScokInfo == &sockInfo) {
@@ -427,9 +434,7 @@ int initLocalWebscoket(SockInfo& sockInfo) {
                 cout << "ws:" << msg << endl;
                 wsUtils.freeFragment(sockInfo.wsFragment);
                 sockInfo.wsFragment = NULL;
-                if (strcmp(msg, "close") == 0) {
-                    sockContainer.shutdownSock(&sockInfo);
-                } else if (strcmp(msg, "start") == 0) {
+                if (strcmp(msg, "start") == 0) {
                     wsUtils.sendMsg(sockInfo, (unsigned char*)"start", 5);
                 } else if (strcmp(msg, "ping") == 0) {
                     wsUtils.sendMsg(sockInfo, (unsigned char*)"pong", 4);
@@ -467,28 +472,32 @@ void sendRecordToLacal(SockInfo& sockInfo, int type, char* data, ssize_t size) {
     size = size == -1 ? strlen(data) : size;
 
     int index = 0;
-    int idSize = 8;
-    int pid = 0;
-    ssize_t bufSize = idSize * 2 + 1 + size;
+    int idSize = sizeof(uint64_t);
+    int ptSize = sizeof(unsigned short);
+    ssize_t bufSize = (idSize + 1) * 2 + 1 + size;
     u_int64_t reqId = htonll(sockInfo.reqId);
     u_int64_t sockId = htonll(sockInfo.sockId);
 
     if (type == MSG_REQ) {
-        bufSize += 7;
+        bufSize += 1;
+        bufSize += 1 + ptSize;
+        bufSize += 1 + strlen(sockInfo.ip);
         // 频繁使用popen调用命令行将导致内存泄漏
         // char* p = findPidByPort(sockInfo.port);
         // if (p) {
         //     pid = atoi(p);
         // }
     } else if (type == MSG_PORT) {
-        bufSize += 2;
+        bufSize += 1 + ptSize;
     }
 
     unsigned char* msg = (unsigned char*)calloc(bufSize, 1);
 
     msg[index++] = type; // msg_type
+    msg[index++] = idSize;
     memcpy(msg + index, &reqId, idSize);
     index += idSize;
+    msg[index++] = idSize;
     memcpy(msg + index, &sockId, idSize);
     index += idSize;
     if (type == MSG_REQ) {
@@ -498,17 +507,19 @@ void sendRecordToLacal(SockInfo& sockInfo, int type, char* data, ssize_t size) {
             msg[index++] = sockInfo.ssl ? 2 : 1; // https/http
         }
 
-        int p = htonl(pid);
-        memcpy(msg + index, &p, 4); // 代理程序进程号
-        index += 4;
-
         unsigned short pt = htons(sockInfo.port);
-        memcpy(msg + index, &pt, 2); // 客户端的端口
-        index += 2;
+        msg[index++] = ptSize;
+        memcpy(msg + index, &pt, ptSize); // 客户端的端口
+        index += ptSize;
+
+        msg[index++] = strlen(sockInfo.ip);
+        memcpy(msg + index, sockInfo.ip, strlen(sockInfo.ip));
+        index += strlen(sockInfo.ip);
     } else if (type == MSG_PORT) {
         unsigned short pt = htons(sockInfo.port);
-        memcpy(msg + index, &pt, 2); // 客户端的端口
-        index += 2;
+        msg[index++] = ptSize;
+        memcpy(msg + index, &pt, ptSize); // 客户端的端口
+        index += ptSize;
     }
     if (data && size > 0) {
         memcpy(msg + index, data, size);
@@ -570,17 +581,16 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
     }
 
     if (header->status == 101 && header->upgrade && strcmp(header->upgrade, "websocket") == 0) { // webscoket连接成功
-        pthread_t localTid;
         pthread_t remoteTid;
 
-        pthread_create(&localTid, NULL, forwardWebocket, &sockInfo);
-        pthread_detach(localTid);
         pthread_create(&remoteTid, NULL, forwardWebocket, sockInfo.remoteSockInfo);
         pthread_detach(remoteTid);
 
         // pthread_t为结构体，引用赋值需要再初始化以后再赋值，否则里面的元素是空的
-        sockInfo.wsTid = localTid;
         sockInfo.remoteSockInfo->wsTid = remoteTid;
+        sockInfo.isWebSock = 1;
+
+        forwardWebocket(&sockInfo);
     }
 
     return 1;
@@ -592,6 +602,11 @@ void* forwardWebocket(void* arg) { // 转发webscoket请求
     while (1) {
         WsFragment* wsFragment = httpUtils.reciveWsFragment(sockInfo, hasError);
         if (hasError) {
+            if (sockInfo.localSockInfo) { // 通过主线程去关闭
+                sockContainer.shutdownSock(sockInfo.localSockInfo);
+            } else {
+                sockContainer.shutdownSock(&sockInfo);
+            }
             break;
         }
         unsigned char* buf = wsUtils.createMsg(wsFragment);

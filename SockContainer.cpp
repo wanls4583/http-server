@@ -52,15 +52,6 @@ void SockContainer::freeSocksReqHeader(SocksReqHeader* header) {
 void SockContainer::resetSockInfo(SockInfo& sockInfo) {
     pthread_mutex_lock(&sockContainerMutex);
 
-    if (sockInfo.remoteSockInfo) {
-        pthread_mutex_unlock(&sockContainerMutex);
-        this->resetSockInfo(*sockInfo.remoteSockInfo);
-        pthread_mutex_lock(&sockContainerMutex);
-
-        free(sockInfo.remoteSockInfo);
-        sockInfo.remoteSockInfo = NULL;
-    }
-
     if (sockInfo.wsTid) {
         pthread_cancel(sockInfo.wsTid);
         sockInfo.wsTid = NULL;
@@ -69,6 +60,15 @@ void SockContainer::resetSockInfo(SockInfo& sockInfo) {
     if (sockInfo.tid) {
         pthread_cancel(sockInfo.tid);
         sockInfo.tid = NULL;
+    }
+
+    if (sockInfo.remoteSockInfo) {
+        pthread_mutex_unlock(&sockContainerMutex);
+        this->resetSockInfo(*sockInfo.remoteSockInfo);
+        pthread_mutex_lock(&sockContainerMutex);
+
+        free(sockInfo.remoteSockInfo);
+        sockInfo.remoteSockInfo = NULL;
     }
 
     if (sockContainer.wsScokInfo == &sockInfo) {
