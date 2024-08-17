@@ -279,10 +279,6 @@ void* initClntSock(void* arg) {
                 return NULL;
             }
 
-            if (sockInfo.isWebSock) { // websocket连接
-                return NULL;
-            }
-
             if (!sockInfo.remoteSockInfo->header->connnection ||
                 sockInfo.remoteSockInfo->header->connnection && strcmp(sockInfo.remoteSockInfo->header->connnection, "close") == 0) { // 远程服务器非长连接
                 sockContainer.shutdownSock(sockInfo.remoteSockInfo);
@@ -588,9 +584,9 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
 
         // pthread_t为结构体，引用赋值需要再初始化以后再赋值，否则里面的元素是空的
         sockInfo.remoteSockInfo->wsTid = remoteTid;
-        sockInfo.isWebSock = 1;
-
         forwardWebocket(&sockInfo);
+
+        return 0;
     }
 
     return 1;

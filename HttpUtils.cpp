@@ -609,7 +609,7 @@ ssize_t HttpUtils::preReadData(SockInfo& sockInfo, char* buf, ssize_t length) {
     ssize_t err;
     ssize_t result;
 
-    if (sockInfo.sockId <= 0) {
+    if (sockInfo.sockId <= 0 || sockInfo.closing) {
         return READ_ERROR;
     }
 
@@ -629,7 +629,7 @@ ssize_t HttpUtils::readData(SockInfo& sockInfo, char* buf, ssize_t length) {
     ssize_t err;
     ssize_t result;
 
-    if (sockInfo.sockId <= 0) {
+    if (sockInfo.sockId <= 0 || sockInfo.closing) {
         return READ_ERROR;
     }
 
@@ -654,7 +654,7 @@ ssize_t HttpUtils::writeData(SockInfo& sockInfo, char* buf, ssize_t length) {
     ssize_t result = READ_AGAIN;
     ssize_t count = 0;
     while (count < length) {
-        if (sockInfo.sockId <= 0) {
+        if (sockInfo.sockId <= 0 || sockInfo.closing) {
             return READ_ERROR;
         }
         if (sockInfo.ssl == NULL) {
