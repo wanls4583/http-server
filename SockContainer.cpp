@@ -52,6 +52,10 @@ void SockContainer::freeSocksReqHeader(SocksReqHeader* header) {
 void SockContainer::resetSockInfo(SockInfo& sockInfo) {
     pthread_mutex_lock(&sockContainerMutex);
 
+    if (sockInfo.sockId < 0) {
+        return;
+    }
+
     if (sockInfo.wsTid) {
         pthread_cancel(sockInfo.wsTid);
         sockInfo.wsTid = NULL;
@@ -60,15 +64,6 @@ void SockContainer::resetSockInfo(SockInfo& sockInfo) {
     if (sockInfo.tid) {
         pthread_cancel(sockInfo.tid);
         sockInfo.tid = NULL;
-    }
-
-    if (sockInfo.remoteSockInfo) {
-        pthread_mutex_unlock(&sockContainerMutex);
-        this->resetSockInfo(*sockInfo.remoteSockInfo);
-        pthread_mutex_lock(&sockContainerMutex);
-
-        free(sockInfo.remoteSockInfo);
-        sockInfo.remoteSockInfo = NULL;
     }
 
     if (sockContainer.wsScokInfo == &sockInfo) {
@@ -106,6 +101,12 @@ void SockContainer::resetSockInfo(SockInfo& sockInfo) {
     sockInfo.tv.tv_sec = 0;
     sockInfo.tv.tv_nsec = 0;
     pthread_mutex_unlock(&sockContainerMutex);
+
+    if (sockInfo.remoteSockInfo) {
+        this->resetSockInfo(*sockInfo.remoteSockInfo);
+        free(sockInfo.remoteSockInfo);
+        sockInfo.remoteSockInfo = NULL;
+    }
 }
 
 void SockContainer::resetSockInfoData(SockInfo& sockInfo) {
@@ -176,11 +177,12 @@ void SockContainer::shutdownSock(SockInfo* sockInfo) {
     }
     sockInfo->closing = 1; // 关闭中
     if (sockInfo->remoteSockInfo) {
+        sockInfo->remoteSockInfo->closing = 1;
         this->closeSock(*sockInfo->remoteSockInfo);
     }
     this->closeSock(*sockInfo);
-    pthread_mutex_unlock(&shutdownMutex);
     this->resetSockInfo(*sockInfo);
+    pthread_mutex_unlock(&shutdownMutex);
 }
 
 void SockContainer::closeSock(SockInfo& sockInfo) {

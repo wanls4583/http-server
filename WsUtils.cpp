@@ -147,6 +147,13 @@ unsigned char* WsUtils::createMsg(WsFragment* fragment) {
         memcpy(msg + index, fragment->data, dataLen);
     }
 
+    if (fragment->mask) {
+        for (u_int16_t i = 0; i < dataLen; i++) {
+            int j = i % 4;
+            msg[index + i] = msg[index + i] ^ fragment->maskKey[j];
+        }
+    }
+
     return msg;
 }
 

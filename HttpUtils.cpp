@@ -217,7 +217,7 @@ void HttpUtils::setHeaderKeyValue(HttpHeader* header, string head) {
         } else if (prop.compare("Trailer") == 0) {
             header->trailer = new char[val.size() + 1];
             strcpy(header->trailer, val.c_str());
-        } else if (prop.compare("Upgrade") == 0) {
+        } else if (prop.compare("Upgrade") == 0 || prop.compare("upgrade") == 0) {
             header->upgrade = new char[val.size() + 1];
             strcpy(header->upgrade, val.c_str());
         } else if (prop.compare("Sec-WebSocket-Key") == 0) {
@@ -448,7 +448,7 @@ WsFragment* HttpUtils::reciveWsFragment(SockInfo& sockInfo, int& hasError) {
         if (sockInfo.bufSize) {
             fragment = wsUtils.parseFragment(sockInfo);
             if (fragment) {
-                if (sockInfo.wsFragment) { // 上次的祯是一个续祯
+                if (sockInfo.wsFragment && sockInfo.wsFragment->fin != 0x01) { // 上次的祯是一个续祯
                     WsFragment* node = sockInfo.wsFragment;
                     while (node->next) {
                         node = node->next;

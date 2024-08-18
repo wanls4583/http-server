@@ -403,6 +403,7 @@ int initRemoteSock(SockInfo& sockInfo) {
 
 int initLocalWebscoket(SockInfo& sockInfo) {
     int hasError = 0;
+    ssize_t result = 0;
     if (sockContainer.wsScokInfo) {
         if (sockContainer.wsScokInfo->sockId == sockInfo.sockId) {
             return 0;
@@ -431,9 +432,12 @@ int initLocalWebscoket(SockInfo& sockInfo) {
                 wsUtils.freeFragment(sockInfo.wsFragment);
                 sockInfo.wsFragment = NULL;
                 if (strcmp(msg, "start") == 0) {
-                    wsUtils.sendMsg(sockInfo, (unsigned char*)"start", 5);
+                    result = wsUtils.sendMsg(sockInfo, (unsigned char*)"start", 5);
                 } else if (strcmp(msg, "ping") == 0) {
-                    wsUtils.sendMsg(sockInfo, (unsigned char*)"pong", 4);
+                    result = wsUtils.sendMsg(sockInfo, (unsigned char*)"pong", 4);
+                }
+                if (READ_ERROR == result || READ_END == result) {
+                    return -1;
                 }
             }
         }
@@ -595,21 +599,30 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
 void* forwardWebocket(void* arg) { // 转发webscoket请求
     SockInfo& sockInfo = *((SockInfo*)arg);
     int hasError = 0;
+    ssize_t result = 0;
     while (1) {
         WsFragment* wsFragment = httpUtils.reciveWsFragment(sockInfo, hasError);
         if (hasError) {
-            if (sockInfo.localSockInfo) { // 通过主线程去关闭
-                sockContainer.shutdownSock(sockInfo.localSockInfo);
-            } else {
-                sockContainer.shutdownSock(&sockInfo);
-            }
+            usleep(1000);
+            // 通过主线程去关闭
+            sockContainer.shutdownSock(sockInfo.localSockInfo ? sockInfo.localSockInfo : &sockInfo);
             break;
         }
         unsigned char* buf = wsUtils.createMsg(wsFragment);
         if (sockInfo.remoteSockInfo) {
-            httpUtils.writeData(*sockInfo.remoteSockInfo, (char*)buf, wsFragment->fragmentSize);
+            result = httpUtils.writeData(*sockInfo.remoteSockInfo, (char*)buf, wsFragment->fragmentSize);
         } else if (sockInfo.localSockInfo) {
-            httpUtils.writeData(*sockInfo.localSockInfo, (char*)buf, wsFragment->fragmentSize);
+            result = httpUtils.writeData(*sockInfo.localSockInfo, (char*)buf, wsFragment->fragmentSize);
+        }
+        // SockInfo info;
+        // info.buf = (char *)buf;
+        // info.bufSize = wsFragment->fragmentSize;
+        // WsFragment* wsFragment1 = wsUtils.parseFragment(info);
+        if (READ_ERROR == result || READ_END == result) {
+            usleep(1000);
+            // 通过主线程去关闭
+            sockContainer.shutdownSock(sockInfo.localSockInfo ? sockInfo.localSockInfo : &sockInfo);
+            break;
         }
     }
 
