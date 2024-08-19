@@ -629,15 +629,18 @@ ssize_t HttpUtils::readData(SockInfo& sockInfo, char* buf, ssize_t length) {
     ssize_t err;
     ssize_t result;
 
+    pthread_testcancel();
     if (sockInfo.sockId <= 0 || sockInfo.closing) {
         return READ_ERROR;
     }
 
+    pthread_testcancel();
     if (sockInfo.ssl == NULL) {
         err = read(sockInfo.sock, buf, length);
     } else {
         err = SSL_read(sockInfo.ssl, buf, length);
     }
+    pthread_testcancel();
 
     result = this->getSockErr(sockInfo, err);
 
@@ -654,14 +657,19 @@ ssize_t HttpUtils::writeData(SockInfo& sockInfo, char* buf, ssize_t length) {
     ssize_t result = READ_AGAIN;
     ssize_t count = 0;
     while (count < length) {
+        pthread_testcancel();
         if (sockInfo.sockId <= 0 || sockInfo.closing) {
             return READ_ERROR;
         }
+
+        pthread_testcancel();
         if (sockInfo.ssl == NULL) {
             err = write(sockInfo.sock, buf + count, length - count);
         } else {
             err = SSL_write(sockInfo.ssl, buf + count, length - count);
         }
+        pthread_testcancel();
+
         result = this->getSockErr(sockInfo, err);
         if (READ_AGAIN == result) {
             usleep(this->cpuTime);

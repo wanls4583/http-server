@@ -120,7 +120,7 @@ void* initClntSock(void* arg) {
     int sock = sockInfo.sock;
     int hasError = 0;
 
-    if (sockInfo.closing || -1 == sockInfo.sock) {
+    if (sockInfo.closing || sockInfo.sockId <= 0) {
         return NULL;
     }
 
@@ -602,10 +602,13 @@ void* forwardWebocket(void* arg) { // 转发webscoket请求
     SockInfo& sockInfo = *((SockInfo*)arg);
     int hasError = 0;
     ssize_t result = 0;
+    u_int64_t sockId = sockInfo.sockId;
+    int sock = sockInfo.sock;
     while (1) {
+        // cout << "reciveWsFragment:" << (sockInfo.localSockInfo ? "server" : "client") << sockId << ":" << sock << endl;
         WsFragment* wsFragment = httpUtils.reciveWsFragment(sockInfo, hasError);
         if (hasError) {
-            // cout << (sockInfo.localSockInfo ? "server" : "client") << ":shutsock1:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
+            // cout << (sockInfo.localSockInfo ? "server" : "client") << ":shutsock1:" << sockId << ":" << sock << endl;
             // 通过主线程去关闭
             sockContainer.shutdownSock(sockInfo.localSockInfo ? sockInfo.localSockInfo : &sockInfo);
             break;
@@ -617,7 +620,7 @@ void* forwardWebocket(void* arg) { // 转发webscoket请求
             result = httpUtils.writeData(*sockInfo.localSockInfo, (char*)buf, wsFragment->fragmentSize);
         }
         if (READ_ERROR == result || READ_END == result) {
-            // cout << (sockInfo.localSockInfo ? "server" : "client") << ":shutsock2:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
+            // cout << (sockInfo.localSockInfo ? "server" : "client") << ":shutsock2:" << sockId << ":" << sock << endl;
             sockContainer.shutdownSock(sockInfo.localSockInfo ? sockInfo.localSockInfo : &sockInfo);
             break;
         }
@@ -627,7 +630,7 @@ void* forwardWebocket(void* arg) { // 转发webscoket请求
             } else {
                 wsUtils.close(*sockInfo.localSockInfo);
             }
-            // cout << (sockInfo.localSockInfo ? "server" : "client") << ":shutsock3:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
+            // cout << (sockInfo.localSockInfo ? "server" : "client") << ":shutsock3:" << sockId << ":" << sock << endl;
             sockContainer.shutdownSock(sockInfo.localSockInfo ? sockInfo.localSockInfo : &sockInfo);
             break;
         }

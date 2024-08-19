@@ -16,6 +16,7 @@ private:
     SockInfo sockInfos[MAX_SOCK];
     pthread_mutex_t sockContainerMutex;
     pthread_mutex_t shutdownMutex;
+    void _resetSockInfo(SockInfo& sockInfo);
 
 public:
     int timeout;

@@ -51,19 +51,18 @@ void SockContainer::freeSocksReqHeader(SocksReqHeader* header) {
 
 void SockContainer::resetSockInfo(SockInfo& sockInfo) {
     pthread_mutex_lock(&sockContainerMutex);
+    this->_resetSockInfo(sockInfo);
+    if (sockInfo.remoteSockInfo) {
+        this->_resetSockInfo(*sockInfo.remoteSockInfo);
+        free(sockInfo.remoteSockInfo);
+        sockInfo.remoteSockInfo = NULL;
+    }
+    pthread_mutex_unlock(&sockContainerMutex);
+}
 
+void SockContainer::_resetSockInfo(SockInfo& sockInfo) {
     if (sockInfo.sockId < 0) {
         return;
-    }
-
-    if (sockInfo.wsTid) {
-        pthread_cancel(sockInfo.wsTid);
-        sockInfo.wsTid = NULL;
-    }
-
-    if (sockInfo.tid) {
-        pthread_cancel(sockInfo.tid);
-        sockInfo.tid = NULL;
     }
 
     if (sockContainer.wsScokInfo == &sockInfo) {
@@ -101,13 +100,6 @@ void SockContainer::resetSockInfo(SockInfo& sockInfo) {
 
     sockInfo.tv.tv_sec = 0;
     sockInfo.tv.tv_nsec = 0;
-    pthread_mutex_unlock(&sockContainerMutex);
-
-    if (sockInfo.remoteSockInfo) {
-        this->resetSockInfo(*sockInfo.remoteSockInfo);
-        free(sockInfo.remoteSockInfo);
-        sockInfo.remoteSockInfo = NULL;
-    }
 }
 
 void SockContainer::resetSockInfoData(SockInfo& sockInfo) {
@@ -125,14 +117,14 @@ void SockContainer::resetSockInfoData(SockInfo& sockInfo) {
         sockInfo.socksReqHeader = NULL;
     }
 
-    sockInfo.reqSize = 0;
-    sockInfo.bodySize = 0;
-
     if (sockInfo.isProxy) { // 远程服务器每次只返回一个响应，所以可清空还未处理的数据
         sockInfo.bufSize = 0;
         free(sockInfo.buf);
         sockInfo.buf = NULL;
     }
+
+    sockInfo.reqSize = 0;
+    sockInfo.bodySize = 0;
 
     free(sockInfo.tlsHeader);
     sockInfo.tlsHeader = NULL;
@@ -167,23 +159,40 @@ SockInfo* SockContainer::getSockInfo() {
 }
 
 void SockContainer::shutdownSock(SockInfo* sockInfo) {
+    pthread_mutex_lock(&shutdownMutex);
     if (!sockInfo) {
         sockInfo = (SockInfo*)pthread_getspecific(ptKey);
     }
-    if (sockInfo->sock == -1 || sockInfo->closing == 1) // 线程已经退出或正在退出
-    {
+
+    if (sockInfo->sock <= 0 || sockInfo->closing == 1) { // 线程已经退出或正在退出
+        pthread_mutex_unlock(&shutdownMutex);
         return;
     }
     sockInfo->closing = 1; // 关闭中
-    if (sockInfo->remoteSockInfo) {
-        sockInfo->remoteSockInfo->closing = 1; // 关闭中
+
+    if (sockInfo->remoteSockInfo && sockInfo->remoteSockInfo->wsTid) {
+        pthread_cancel(sockInfo->remoteSockInfo->wsTid);
+        // cout << "pthread_kill:" << sockInfo->remoteSockInfo->sockId << ":" << sockInfo->remoteSockInfo->sock << endl;
+        sockInfo->remoteSockInfo->wsTid = NULL;
     }
-    pthread_mutex_lock(&shutdownMutex);
+
     this->closeSock(*sockInfo);
     if (sockInfo->remoteSockInfo) {
         this->closeSock(*sockInfo->remoteSockInfo);
     }
+
+    u_int64_t sockId = sockInfo->sockId;
+    int sock = sockInfo->sock;
     this->resetSockInfo(*sockInfo);
+    if (sockInfo->tid) {
+        // cout << "pthread_cancel:" << sockId << ":" << sock << endl;
+        pthread_cancel(sockInfo->tid);
+        sockInfo->tid = NULL;
+        pthread_mutex_unlock(&shutdownMutex);
+        pthread_testcancel();
+        // cout << "pthread_testcancel" << endl;
+        return;
+    }
     pthread_mutex_unlock(&shutdownMutex);
 }
 
