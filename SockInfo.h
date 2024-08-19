@@ -23,6 +23,7 @@ typedef struct SockInfo {
     int isNoCheckSocks;
     int isProxy;
     int isWebSock;
+    int recivedCloseFrame;
     int port;
 
     ssize_t bufSize;

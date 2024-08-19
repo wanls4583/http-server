@@ -85,6 +85,7 @@ void SockContainer::resetSockInfo(SockInfo& sockInfo) {
     sockInfo.isNoCheckSocks = 0;
     sockInfo.isProxy = 0;
     sockInfo.isWebSock = 0;
+    sockInfo.recivedCloseFrame = 0;
     sockInfo.port = 0;
 
     sockInfo.bufSize = 0;
@@ -166,18 +167,19 @@ SockInfo* SockContainer::getSockInfo() {
 }
 
 void SockContainer::shutdownSock(SockInfo* sockInfo) {
-    pthread_mutex_lock(&shutdownMutex);
     if (!sockInfo) {
         sockInfo = (SockInfo*)pthread_getspecific(ptKey);
     }
-    if (sockInfo->sock == -1) // 线程已经退出
+    if (sockInfo->sock == -1 || sockInfo->closing == 1) // 线程已经退出或正在退出
     {
-        pthread_mutex_unlock(&shutdownMutex);
         return;
     }
     sockInfo->closing = 1; // 关闭中
     if (sockInfo->remoteSockInfo) {
-        sockInfo->remoteSockInfo->closing = 1;
+        sockInfo->remoteSockInfo->closing = 1; // 关闭中
+    }
+    pthread_mutex_lock(&shutdownMutex);
+    if (sockInfo->remoteSockInfo) {
         this->closeSock(*sockInfo->remoteSockInfo);
     }
     this->closeSock(*sockInfo);

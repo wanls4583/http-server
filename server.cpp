@@ -588,6 +588,8 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
 
         // pthread_t为结构体，引用赋值需要再初始化以后再赋值，否则里面的元素是空的
         sockInfo.remoteSockInfo->wsTid = remoteTid;
+        sockInfo.remoteSockInfo->isWebSock = 1;
+        sockInfo.isWebSock = 1;
         forwardWebocket(&sockInfo);
 
         return 0;
@@ -603,7 +605,7 @@ void* forwardWebocket(void* arg) { // 转发webscoket请求
     while (1) {
         WsFragment* wsFragment = httpUtils.reciveWsFragment(sockInfo, hasError);
         if (hasError) {
-            usleep(1000);
+            // cout << (sockInfo.localSockInfo ? "server" : "client") << ":shutsock1:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
             // 通过主线程去关闭
             sockContainer.shutdownSock(sockInfo.localSockInfo ? sockInfo.localSockInfo : &sockInfo);
             break;
@@ -614,13 +616,18 @@ void* forwardWebocket(void* arg) { // 转发webscoket请求
         } else if (sockInfo.localSockInfo) {
             result = httpUtils.writeData(*sockInfo.localSockInfo, (char*)buf, wsFragment->fragmentSize);
         }
-        // SockInfo info;
-        // info.buf = (char *)buf;
-        // info.bufSize = wsFragment->fragmentSize;
-        // WsFragment* wsFragment1 = wsUtils.parseFragment(info);
         if (READ_ERROR == result || READ_END == result) {
-            usleep(1000);
-            // 通过主线程去关闭
+            // cout << (sockInfo.localSockInfo ? "server" : "client") << ":shutsock2:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
+            sockContainer.shutdownSock(sockInfo.localSockInfo ? sockInfo.localSockInfo : &sockInfo);
+            break;
+        }
+        if (wsFragment->opCode == 0x08) {
+            if (sockInfo.remoteSockInfo) {
+                wsUtils.close(*sockInfo.remoteSockInfo);
+            } else {
+                wsUtils.close(*sockInfo.localSockInfo);
+            }
+            // cout << (sockInfo.localSockInfo ? "server" : "client") << ":shutsock3:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
             sockContainer.shutdownSock(sockInfo.localSockInfo ? sockInfo.localSockInfo : &sockInfo);
             break;
         }
