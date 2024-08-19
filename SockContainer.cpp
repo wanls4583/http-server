@@ -179,10 +179,10 @@ void SockContainer::shutdownSock(SockInfo* sockInfo) {
         sockInfo->remoteSockInfo->closing = 1; // 关闭中
     }
     pthread_mutex_lock(&shutdownMutex);
+    this->closeSock(*sockInfo);
     if (sockInfo->remoteSockInfo) {
         this->closeSock(*sockInfo->remoteSockInfo);
     }
-    this->closeSock(*sockInfo);
     this->resetSockInfo(*sockInfo);
     pthread_mutex_unlock(&shutdownMutex);
 }
@@ -191,6 +191,7 @@ void SockContainer::closeSock(SockInfo& sockInfo) {
     if (sockInfo.ssl != NULL) {
         int res = SSL_shutdown(sockInfo.ssl); // 0:未完成，1:成功，-1:失败
         shutdown(sockInfo.sock, SHUT_RDWR);
+        usleep(1000); // 此时可能有其他线程正准备执行 SSL_read 或 SSL_write
         SSL_free(sockInfo.ssl);
     } else {
         shutdown(sockInfo.sock, SHUT_RDWR);
