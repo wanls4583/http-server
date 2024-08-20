@@ -6,7 +6,7 @@ extern WsUtils wsUtils;
 extern SockContainer sockContainer;
 extern pthread_key_t ptKey;
 
-SockContainer::SockContainer(): timeout(60), reqId(1), sockId(1) {
+SockContainer::SockContainer(): timeout(10), reqId(1), sockId(1) {
     pthread_mutex_init(&sockContainerMutex, NULL);
     pthread_mutex_init(&shutdownMutex, NULL);
     this->initSockInfos();
@@ -71,6 +71,8 @@ void SockContainer::_resetSockInfo(SockInfo& sockInfo) {
 
     this->resetSockInfoData(sockInfo);
 
+    sockInfo.tid = NULL;
+    sockInfo.wsTid = NULL;
     sockInfo.ssl = NULL;
     sockInfo.localSockInfo = NULL;
 
@@ -169,31 +171,28 @@ void SockContainer::shutdownSock(SockInfo* sockInfo) {
         return;
     }
     sockInfo->closing = 1; // 关闭中
-
-    if (sockInfo->remoteSockInfo && sockInfo->remoteSockInfo->wsTid) {
-        pthread_cancel(sockInfo->remoteSockInfo->wsTid);
-        // cout << "pthread_kill:" << sockInfo->remoteSockInfo->sockId << ":" << sockInfo->remoteSockInfo->sock << endl;
-        sockInfo->remoteSockInfo->wsTid = NULL;
-    }
+    pthread_mutex_unlock(&shutdownMutex);
 
     this->closeSock(*sockInfo);
     if (sockInfo->remoteSockInfo) {
         this->closeSock(*sockInfo->remoteSockInfo);
     }
 
+    pthread_t wsTid = sockInfo->remoteSockInfo ? sockInfo->remoteSockInfo->wsTid : NULL;
+    pthread_t tid = sockInfo->tid;
     u_int64_t sockId = sockInfo->sockId;
     int sock = sockInfo->sock;
     this->resetSockInfo(*sockInfo);
-    if (sockInfo->tid) {
-        // cout << "pthread_cancel:" << sockId << ":" << sock << endl;
-        pthread_cancel(sockInfo->tid);
-        sockInfo->tid = NULL;
-        pthread_mutex_unlock(&shutdownMutex);
-        pthread_testcancel();
-        // cout << "pthread_testcancel" << endl;
-        return;
+
+    if (wsTid) {
+        pthread_cancel(wsTid);
     }
-    pthread_mutex_unlock(&shutdownMutex);
+    if (tid) {
+        cout << "pthread_cancel:" << sockId << ":" << sock << endl;
+        pthread_cancel(tid);
+    }
+    pthread_testcancel();
+    // cout << "pthread_testcancel" << endl;
 }
 
 void SockContainer::closeSock(SockInfo& sockInfo) {

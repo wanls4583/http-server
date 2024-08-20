@@ -77,6 +77,7 @@ int main() {
             pthread_create(&tid, NULL, initClntSock, sockInfo);
             pthread_detach(tid);
             (*sockInfo).tid = tid;
+            // cout << "pthread_create:" << (*sockInfo).sockId << ":" << (*sockInfo).sock << endl;
         } else {
             shutdown(sock, SHUT_RDWR);
             close(sock);
@@ -124,6 +125,7 @@ void* initClntSock(void* arg) {
         return NULL;
     }
 
+    cout << "initClntSock:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
     pthread_setspecific(ptKey, arg);
     sockContainer.setNoBlock(sockInfo, 1); // 设置成非阻塞模式
     sendRecordToLacal(sockInfo, MSG_PORT, NULL, 0);
@@ -192,15 +194,19 @@ void* initClntSock(void* arg) {
     }
 
     header = httpUtils.reciveHeader(sockInfo, hasError); // 读取客户端的请求头
+    cout << "reciveHeader-after:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
 
     if (hasError) {
+        cout << "shutdownSock-after1:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
         sockContainer.shutdownSock();
         return NULL;
     }
 
     if (!header || !header->hostname || !header->method) { // 解析请求头失败
-        sockContainer.resetSockInfoData(sockInfo);
-        initClntSock(arg);
+        // sockContainer.resetSockInfoData(sockInfo);
+        // initClntSock(arg);
+        cout << "shutdownSock-after2:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
+        sockContainer.shutdownSock();
         return NULL;
     }
 
@@ -281,8 +287,8 @@ void* initClntSock(void* arg) {
 
             if (!sockInfo.remoteSockInfo->header->connnection ||
                 sockInfo.remoteSockInfo->header->connnection && strcmp(sockInfo.remoteSockInfo->header->connnection, "close") == 0) { // 远程服务器非长连接
-                sockContainer.shutdownSock(sockInfo.remoteSockInfo);
-                sockInfo.remoteSockInfo = NULL;
+                sockContainer.shutdownSock();
+                return NULL;
             }
         } else {
             sockContainer.shutdownSock();
@@ -340,7 +346,7 @@ int initRemoteSock(SockInfo& sockInfo) {
     if (err != 0) {
         char status = STATUS_FAIL_CONNECT;
         sendRecordToLacal(sockInfo, MSG_STATUS, &status, 1);
-        cout << "connect fail:" << sockInfo.header->hostname << endl;
+        cout << "connect fail:" << sockInfo.sockId << ":" << sockInfo.sock << ":" << sockInfo.header->hostname << endl;
         return 0;
     }
     sendTimeToLacal(sockInfo, TIME_CONNECT_END);
@@ -371,7 +377,7 @@ int initRemoteSock(SockInfo& sockInfo) {
             int sslErrCode = SSL_get_error(ssl, err);
             char status = STATUS_FAIL_SSL_CONNECT;
             sendRecordToLacal(sockInfo, MSG_STATUS, &status, 1);
-            cout << "SSL_connect fail:" << sslErrCode << endl;
+            cout << "SSL_connect fail:" << sockInfo.sockId << ":" << sockInfo.sock << ":" << sslErrCode << endl;
             return 0;
         } else {
             // 获取服务器证书--begin

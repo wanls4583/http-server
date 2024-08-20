@@ -9,7 +9,7 @@
 #include "SockInfo.h"
 #include "WsUtils.h"
 
-const int MAX_SOCK = 100;
+const int MAX_SOCK = 30;
 
 class SockContainer {
 private:
