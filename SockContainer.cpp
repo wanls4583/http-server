@@ -162,11 +162,15 @@ SockInfo* SockContainer::getSockInfo() {
 
 void SockContainer::shutdownSock(SockInfo* sockInfo) {
     pthread_mutex_lock(&shutdownMutex);
+    int isRemoteThread = 0;
     if (!sockInfo) {
         sockInfo = (SockInfo*)pthread_getspecific(ptKey);
+    } else if (sockInfo->localSockInfo) {
+        sockInfo = sockInfo->localSockInfo;
+        isRemoteThread = 1;
     }
 
-    if (sockInfo->sock <= 0 || sockInfo->closing == 1) { // 线程已经退出或正在退出
+    if (sockInfo->sockId <= 0 || sockInfo->closing) { // 线程已经退出或正在退出
         pthread_mutex_unlock(&shutdownMutex);
         return;
     }
@@ -178,28 +182,28 @@ void SockContainer::shutdownSock(SockInfo* sockInfo) {
         this->closeSock(*sockInfo->remoteSockInfo);
     }
 
+    pthread_t self = pthread_self();
     pthread_t wsTid = sockInfo->remoteSockInfo ? sockInfo->remoteSockInfo->wsTid : NULL;
     pthread_t tid = sockInfo->tid;
     u_int64_t sockId = sockInfo->sockId;
     int sock = sockInfo->sock;
-    this->resetSockInfo(*sockInfo);
 
-    if (wsTid) {
+    if (isRemoteThread) {
+        pthread_cancel(tid);
+    } else if (wsTid) {
         pthread_cancel(wsTid);
     }
-    if (tid) {
-        cout << "pthread_cancel:" << sockId << ":" << sock << endl;
-        pthread_cancel(tid);
-    }
-    pthread_testcancel();
-    // cout << "pthread_testcancel" << endl;
+
+    this->resetSockInfo(*sockInfo);
+    cout << "pthread_exit:" << sockId << ":" << sock << endl;
+    pthread_exit(NULL);
+    cout << "exit" << endl;
 }
 
 void SockContainer::closeSock(SockInfo& sockInfo) {
     if (sockInfo.ssl != NULL) {
         int res = SSL_shutdown(sockInfo.ssl); // 0:未完成，1:成功，-1:失败
         shutdown(sockInfo.sock, SHUT_RDWR);
-        usleep(1000); // 此时可能有其他线程正准备执行 SSL_read 或 SSL_write
         SSL_free(sockInfo.ssl);
     } else {
         shutdown(sockInfo.sock, SHUT_RDWR);

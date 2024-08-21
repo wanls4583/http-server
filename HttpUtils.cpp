@@ -631,7 +631,9 @@ ssize_t HttpUtils::preReadData(SockInfo& sockInfo, char* buf, ssize_t length) {
         return READ_ERROR;
     }
 
+    pthread_testcancel();
     err = recv(sockInfo.sock, buf, length, MSG_PEEK); // MSG_PEEK查看传入数据，数据将复制到缓冲区中，但不会从输入队列中删除
+    pthread_testcancel();
 
     result = this->getSockErr(sockInfo, err);
 

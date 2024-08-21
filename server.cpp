@@ -331,6 +331,11 @@ int initRemoteSock(SockInfo& sockInfo) {
 
     struct sockaddr_in remoteAddr;
     int remoteSock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    int originSockFlag = fcntl(remoteSock, F_GETFL, 0);
+    int sockFlag = fcntl(remoteSock, F_SETFL, originSockFlag | O_NONBLOCK);
+    if (sockFlag == -1) {
+        cout << "fcntl err" << endl;
+    }
 
     memset(&remoteAddr, 0, sizeof(remoteAddr));
     remoteAddr.sin_family = host->h_addrtype;
@@ -342,12 +347,32 @@ int initRemoteSock(SockInfo& sockInfo) {
     sendRecordToLacal(sockInfo, MSG_DNS, ip, strlen(ip));
 
     sendTimeToLacal(sockInfo, TIME_CONNECT_START);
-    int err = connect(remoteSock, (struct sockaddr*)&remoteAddr, sizeof(remoteAddr));
-    if (err != 0) {
-        char status = STATUS_FAIL_CONNECT;
-        sendRecordToLacal(sockInfo, MSG_STATUS, &status, 1);
-        cout << "connect fail:" << sockInfo.sockId << ":" << sockInfo.sock << ":" << sockInfo.header->hostname << endl;
-        return 0;
+    int retries = 0;
+    cout << "connect start:" << sockInfo.header->hostname << endl;
+    while (1) {
+        int err = connect(remoteSock, (struct sockaddr*)&remoteAddr, sizeof(remoteAddr));
+        if (err != 0) {
+            if (errno == EISCONN) {
+                break;
+            }
+            if (errno == EINTR || errno == EAGAIN || errno == EINPROGRESS || errno == EALREADY) {
+                usleep(1000);
+                retries++;
+                if (retries >= 5000) { // 5秒超时
+                    char status = STATUS_FAIL_CONNECT;
+                    sendRecordToLacal(sockInfo, MSG_STATUS, &status, 1);
+                    cout << "connect timeout:" << sockInfo.sockId << ":" << sockInfo.sock << ":" << sockInfo.header->hostname << endl;
+                    return 0;
+                }
+            } else {
+                char status = STATUS_FAIL_CONNECT;
+                sendRecordToLacal(sockInfo, MSG_STATUS, &status, 1);
+                cout << "connect fail:" << sockInfo.sockId << ":" << sockInfo.sock << ":" << sockInfo.header->hostname << endl;
+                return 0;
+            }
+        } else {
+            break;
+        }
     }
     sendTimeToLacal(sockInfo, TIME_CONNECT_END);
 
@@ -358,8 +383,11 @@ int initRemoteSock(SockInfo& sockInfo) {
     sockInfo.remoteSockInfo->ip = ip;
     sockInfo.remoteSockInfo->sock = remoteSock;
     sockInfo.remoteSockInfo->localSockInfo = &sockInfo;
+    sockInfo.remoteSockInfo->originSockFlag = originSockFlag;
+    sockInfo.remoteSockInfo->isNoBloack = 1;
 
     if (sockInfo.ssl) {
+        sockContainer.setNoBlock(*sockInfo.remoteSockInfo, 0);
         // SSL_load_error_strings();
         // OpenSSL_add_ssl_algorithms();
 
@@ -371,7 +399,7 @@ int initRemoteSock(SockInfo& sockInfo) {
         SSL_set_tlsext_host_name(ssl, sockInfo.header->hostname);
 
         sendTimeToLacal(sockInfo, TIME_CONNECT_SSL_START);
-        err = SSL_connect(ssl);
+        int err = SSL_connect(ssl);
         sendTimeToLacal(sockInfo, TIME_CONNECT_SSL_END);
         if (err != 1) {
             int sslErrCode = SSL_get_error(ssl, err);
@@ -616,7 +644,7 @@ void* forwardWebocket(void* arg) { // 转发webscoket请求
         if (hasError) {
             // cout << (sockInfo.localSockInfo ? "server" : "client") << ":shutsock1:" << sockId << ":" << sock << endl;
             // 通过主线程去关闭
-            sockContainer.shutdownSock(sockInfo.localSockInfo ? sockInfo.localSockInfo : &sockInfo);
+            sockContainer.shutdownSock(&sockInfo);
             break;
         }
         unsigned char* buf = wsUtils.createMsg(wsFragment);
@@ -627,7 +655,7 @@ void* forwardWebocket(void* arg) { // 转发webscoket请求
         }
         if (READ_ERROR == result || READ_END == result) {
             // cout << (sockInfo.localSockInfo ? "server" : "client") << ":shutsock2:" << sockId << ":" << sock << endl;
-            sockContainer.shutdownSock(sockInfo.localSockInfo ? sockInfo.localSockInfo : &sockInfo);
+            sockContainer.shutdownSock(&sockInfo);
             break;
         }
         if (wsFragment->opCode == 0x08) {
@@ -637,7 +665,7 @@ void* forwardWebocket(void* arg) { // 转发webscoket请求
                 wsUtils.close(*sockInfo.localSockInfo);
             }
             // cout << (sockInfo.localSockInfo ? "server" : "client") << ":shutsock3:" << sockId << ":" << sock << endl;
-            sockContainer.shutdownSock(sockInfo.localSockInfo ? sockInfo.localSockInfo : &sockInfo);
+            sockContainer.shutdownSock(&sockInfo);
             break;
         }
     }
