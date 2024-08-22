@@ -7,8 +7,6 @@ extern SockContainer sockContainer;
 extern pthread_key_t ptKey;
 
 SockContainer::SockContainer(): timeout(10), reqId(1), sockId(1) {
-    pthread_mutex_init(&sockContainerMutex, NULL);
-    pthread_mutex_init(&shutdownMutex, NULL);
     this->initSockInfos();
 }
 
@@ -50,36 +48,34 @@ void SockContainer::freeSocksReqHeader(SocksReqHeader* header) {
 }
 
 void SockContainer::resetSockInfo(SockInfo& sockInfo) {
-    pthread_mutex_lock(&sockContainerMutex);
     this->_resetSockInfo(sockInfo);
     if (sockInfo.remoteSockInfo) {
         this->_resetSockInfo(*sockInfo.remoteSockInfo);
         free(sockInfo.remoteSockInfo);
         sockInfo.remoteSockInfo = NULL;
     }
-    pthread_mutex_unlock(&sockContainerMutex);
 }
 
 void SockContainer::_resetSockInfo(SockInfo& sockInfo) {
-    if (sockInfo.sockId < 0) {
-        return;
-    }
+    this->resetSockInfoData(sockInfo);
 
     if (sockContainer.wsScokInfo == &sockInfo) {
         sockContainer.wsScokInfo = NULL;
     }
 
-    this->resetSockInfoData(sockInfo);
+    if (sockInfo.ssl) {
+        SSL_free(sockInfo.ssl);
+        sockInfo.ssl = NULL;
+    }
 
     sockInfo.tid = NULL;
     sockInfo.wsTid = NULL;
-    sockInfo.ssl = NULL;
     sockInfo.localSockInfo = NULL;
 
     sockInfo.reqId = 0;
     sockInfo.sockId = 0;
     sockInfo.sock = -1;
-    sockInfo.closing = 0;
+    sockInfo.state = 0;
     sockInfo.originSockFlag = 0;
     sockInfo.isNoBloack = 0;
     sockInfo.isNoCheckSSL = 0;
@@ -147,64 +143,42 @@ void SockContainer::initSockInfos() {
 }
 
 SockInfo* SockContainer::getSockInfo() {
-    pthread_mutex_lock(&sockContainerMutex);
     for (int i = 0; i < MAX_SOCK; i++) {
-        if (this->sockInfos[i].sock == -1 && !this->sockInfos[i].closing) {
+        if (this->sockInfos[i].state == SOCK_STATE_CLOSED && (!this->sockInfos[i].remoteSockInfo || this->sockInfos[i].remoteSockInfo->state == SOCK_STATE_CLOSED)) {
+            this->resetSockInfo(this->sockInfos[i]);
+        }
+        if (this->sockInfos[i].sockId <= 0 && !this->sockInfos[i].state) {
             timespec_get(&(this->sockInfos[i].tv), TIME_UTC);
-            pthread_mutex_unlock(&sockContainerMutex);
             this->sockInfos[i].sock = 0;
             return &this->sockInfos[i];
         }
     }
-    pthread_mutex_unlock(&sockContainerMutex);
     return NULL;
 }
 
 void SockContainer::shutdownSock(SockInfo* sockInfo) {
-    pthread_mutex_lock(&shutdownMutex);
-    int isRemoteThread = 0;
+    int singleMode = 0;
     if (!sockInfo) {
         sockInfo = (SockInfo*)pthread_getspecific(ptKey);
     } else if (sockInfo->localSockInfo) {
         sockInfo = sockInfo->localSockInfo;
-        isRemoteThread = 1;
+        singleMode = 1;
     }
-
-    if (sockInfo->sockId <= 0 || sockInfo->closing) { // 线程已经退出或正在退出
-        pthread_mutex_unlock(&shutdownMutex);
-        return;
-    }
-    sockInfo->closing = 1; // 关闭中
-    pthread_mutex_unlock(&shutdownMutex);
 
     this->closeSock(*sockInfo);
-    if (sockInfo->remoteSockInfo) {
+    if (!singleMode && sockInfo->remoteSockInfo) {
         this->closeSock(*sockInfo->remoteSockInfo);
+        sockInfo->remoteSockInfo->state = SOCK_STATE_CLOSED;
     }
 
-    pthread_t self = pthread_self();
-    pthread_t wsTid = sockInfo->remoteSockInfo ? sockInfo->remoteSockInfo->wsTid : NULL;
-    pthread_t tid = sockInfo->tid;
-    u_int64_t sockId = sockInfo->sockId;
-    int sock = sockInfo->sock;
-
-    if (isRemoteThread) {
-        pthread_cancel(tid);
-    } else if (wsTid) {
-        pthread_cancel(wsTid);
-    }
-
-    this->resetSockInfo(*sockInfo);
-    cout << "pthread_exit:" << sockId << ":" << sock << endl;
-    pthread_exit(NULL);
-    cout << "exit" << endl;
+    sockInfo->state = SOCK_STATE_CLOSED; // 已关闭
+    // cout << "shutdownSock:" << sockInfo->sockId << ":" << sockInfo->sock << endl;
 }
 
 void SockContainer::closeSock(SockInfo& sockInfo) {
     if (sockInfo.ssl != NULL) {
         int res = SSL_shutdown(sockInfo.ssl); // 0:未完成，1:成功，-1:失败
         shutdown(sockInfo.sock, SHUT_RDWR);
-        SSL_free(sockInfo.ssl);
     } else {
         shutdown(sockInfo.sock, SHUT_RDWR);
     }

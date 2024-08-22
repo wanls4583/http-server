@@ -6,6 +6,8 @@
 #include "SocksReqHeader.h"
 #include "WsFragment.h"
 
+enum { SOCK_STATE_CLOSED = 1 };
+
 typedef struct SockInfo {
     HttpHeader* header;
     SocksReqHeader* socksReqHeader;
@@ -16,7 +18,7 @@ typedef struct SockInfo {
     u_int64_t reqId;
     u_int64_t sockId;
     int sock;
-    int closing;
+    int state;
     int originSockFlag;
     int isNoBloack;
     int isNoCheckSSL;

@@ -121,11 +121,7 @@ void* initClntSock(void* arg) {
     int sock = sockInfo.sock;
     int hasError = 0;
 
-    if (sockInfo.closing || sockInfo.sockId <= 0) {
-        return NULL;
-    }
-
-    cout << "initClntSock:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
+    // cout << "initClntSock:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
     pthread_setspecific(ptKey, arg);
     sockContainer.setNoBlock(sockInfo, 1); // 设置成非阻塞模式
     sendRecordToLacal(sockInfo, MSG_PORT, NULL, 0);
@@ -194,26 +190,16 @@ void* initClntSock(void* arg) {
     }
 
     header = httpUtils.reciveHeader(sockInfo, hasError); // 读取客户端的请求头
-    cout << "reciveHeader-after:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
 
     if (hasError) {
-        cout << "shutdownSock-after1:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
         sockContainer.shutdownSock();
         return NULL;
     }
 
     if (!header || !header->hostname || !header->method) { // 解析请求头失败
-        // sockContainer.resetSockInfoData(sockInfo);
-        // initClntSock(arg);
-        cout << "shutdownSock-after2:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
         sockContainer.shutdownSock();
         return NULL;
     }
-
-    // if (strcmp(header->hostname, "developer.mozilla.org") != 0) {
-    //     sockContainer.shutdownSock();
-    //     return NULL;
-    // }
 
     httpUtils.reciveBody(sockInfo, hasError); // 读取客户端的请求体
 
@@ -348,7 +334,7 @@ int initRemoteSock(SockInfo& sockInfo) {
 
     sendTimeToLacal(sockInfo, TIME_CONNECT_START);
     int retries = 0;
-    cout << "connect start:" << sockInfo.header->hostname << endl;
+    // cout << "connect start:" << sockInfo.header->hostname << endl;
     while (1) {
         int err = connect(remoteSock, (struct sockaddr*)&remoteAddr, sizeof(remoteAddr));
         if (err != 0) {
@@ -361,13 +347,13 @@ int initRemoteSock(SockInfo& sockInfo) {
                 if (retries >= 5000) { // 5秒超时
                     char status = STATUS_FAIL_CONNECT;
                     sendRecordToLacal(sockInfo, MSG_STATUS, &status, 1);
-                    cout << "connect timeout:" << sockInfo.sockId << ":" << sockInfo.sock << ":" << sockInfo.header->hostname << endl;
+                    // cout << "connect timeout:" << sockInfo.sockId << ":" << sockInfo.sock << ":" << sockInfo.header->hostname << endl;
                     return 0;
                 }
             } else {
                 char status = STATUS_FAIL_CONNECT;
                 sendRecordToLacal(sockInfo, MSG_STATUS, &status, 1);
-                cout << "connect fail:" << sockInfo.sockId << ":" << sockInfo.sock << ":" << sockInfo.header->hostname << endl;
+                // cout << "connect fail:" << sockInfo.sockId << ":" << sockInfo.sock << ":" << sockInfo.header->hostname << endl;
                 return 0;
             }
         } else {
@@ -661,10 +647,11 @@ void* forwardWebocket(void* arg) { // 转发webscoket请求
         if (wsFragment->opCode == 0x08) {
             if (sockInfo.remoteSockInfo) {
                 wsUtils.close(*sockInfo.remoteSockInfo);
-            } else {
+            } else if (sockInfo.localSockInfo) {
                 wsUtils.close(*sockInfo.localSockInfo);
             }
             // cout << (sockInfo.localSockInfo ? "server" : "client") << ":shutsock3:" << sockId << ":" << sock << endl;
+            usleep(1000);
             sockContainer.shutdownSock(&sockInfo);
             break;
         }
