@@ -17,7 +17,7 @@
 
 using namespace std;
 
-enum { MSG_REQ = 1, MSG_RES, MSG_DNS, MSG_STATUS, MSG_TIME, MSG_CIPHER, MSG_CERT, MSG_PORT };
+enum { MSG_REQ_HEAD = 1, MSG_REQ_BODY, MSG_REQ_BODY_END, MSG_RES_HEAD, MSG_RES_BODY, MSG_RES_BODY_END, MSG_DNS, MSG_STATUS, MSG_TIME, MSG_CIPHER, MSG_CERT, MSG_PORT };
 enum { STATUS_FAIL_CONNECT = 1, STATUS_FAIL_SSL_CONNECT };
 enum { TIME_DNS_START = 1, TIME_DNS_END, TIME_CONNECT_START, TIME_CONNECT_END, TIME_CONNECT_SSL_START, TIME_CONNECT_SSL_END, TIME_REQ_START, TIME_REQ_END, TIME_RES_START, TIME_RES_END };
 
@@ -35,6 +35,7 @@ pthread_mutex_t serverMutex;
 int initServSock();
 void* initClntSock(void* arg);
 int initRemoteSock(SockInfo& sockInfo);
+int reciveBody(SockInfo& sockInfo);
 int forward(SockInfo& sockInfo);
 void* forwardWebocket(void* arg);
 int initLocalWebscoket(SockInfo& sockInfo);
@@ -201,14 +202,6 @@ void* initClntSock(void* arg) {
         return NULL;
     }
 
-    httpUtils.reciveBody(sockInfo, hasError); // 读取客户端的请求体
-
-    if (hasError) // 获取请求体失败
-    {
-        sockContainer.shutdownSock();
-        return NULL;
-    }
-
     sockInfo.reqId = sockContainer.reqId++;
 
     if (strcmp(header->method, "CONNECT") == 0) // 客户端https代理连接请求
@@ -248,7 +241,7 @@ void* initClntSock(void* arg) {
             char* req;
             ssize_t reqSize;
             httpUtils.createReqData(sockInfo, req, reqSize);
-            sendRecordToLacal(sockInfo, MSG_REQ, req, reqSize);
+            sendRecordToLacal(sockInfo, MSG_REQ_HEAD, req, reqSize);
             if (sockInfo.cipher) {
                 sendRecordToLacal(sockInfo, MSG_CIPHER, sockInfo.cipher, -1);
             }
@@ -498,7 +491,7 @@ void sendRecordToLacal(SockInfo& sockInfo, int type, char* data, ssize_t size) {
     u_int64_t reqId = htonll(sockInfo.reqId);
     u_int64_t sockId = htonll(sockInfo.sockId);
 
-    if (type == MSG_REQ) {
+    if (type == MSG_REQ_HEAD) {
         bufSize += 1;
         bufSize += 1 + ptSize;
         bufSize += 1 + strlen(sockInfo.ip);
@@ -520,7 +513,7 @@ void sendRecordToLacal(SockInfo& sockInfo, int type, char* data, ssize_t size) {
     msg[index++] = idSize;
     memcpy(msg + index, &sockId, idSize);
     index += idSize;
-    if (type == MSG_REQ) {
+    if (type == MSG_REQ_HEAD) {
         if (sockInfo.header && sockInfo.header->upgrade && strcmp(sockInfo.header->upgrade, "websocket") == 0) {
             msg[index++] = sockInfo.ssl ? 4 : 3; // wss/ws
         } else {
@@ -549,56 +542,125 @@ void sendRecordToLacal(SockInfo& sockInfo, int type, char* data, ssize_t size) {
     free(msg);
 }
 
+int reciveBody(SockInfo& sockInfo) {
+    HttpHeader* header = sockInfo.header;
+    string boundary = httpUtils.getBoundary(header);
+    ssize_t bufSize = 0;
+    ssize_t preBufSize = 0;
+    ssize_t bodySize = 0;
+    ssize_t dataSize = 0;
+    char* preBuf = NULL;
+    int endTryTimes = 0, loop = 0, isEnd = 0, hasError = 0;
+    while (!isEnd) {
+        dataSize = 0;
+        bufSize = sockInfo.bufSize;
+        while (!bufSize) {
+            bufSize = httpUtils.reciveData(sockInfo);
+            httpUtils.checkError(sockInfo, bufSize, endTryTimes, loop, hasError);
+            if (hasError) {
+                free(preBuf);
+                return 0;
+            }
+        }
+        if (header->contentLenth) {
+            if (header->contentLenth <= sockInfo.bufSize + bodySize) {
+                dataSize = header->contentLenth - bodySize;
+                isEnd = true;
+            } else {
+                bodySize += sockInfo.bufSize;
+            }
+        } else if (boundary.size()) {
+            preBuf = (char*)realloc(preBuf, preBufSize + sockInfo.bufSize);
+            memcpy(preBuf + preBufSize, sockInfo.buf, sockInfo.bufSize);
+            ssize_t preSize = preBufSize > boundary.size() ? preBufSize - boundary.size() : 0;
+            ssize_t pos = kmpStrstr(preBuf, boundary.c_str(), preBufSize + sockInfo.bufSize, boundary.size(), preSize);
+            if (pos != -1) {
+                dataSize = pos + boundary.size() - preBufSize;
+                isEnd = true;
+            }
+        }
+        free(preBuf);
+        dataSize = dataSize ? dataSize : sockInfo.bufSize;
+        sendRecordToLacal(sockInfo, MSG_RES_BODY, sockInfo.buf, dataSize);
+        if (isEnd) {
+            sendRecordToLacal(sockInfo, MSG_RES_BODY_END, NULL, 0);
+        }
+
+        ssize_t result = httpUtils.writeData(sockInfo.remoteSockInfo ? *sockInfo.remoteSockInfo : *sockInfo.localSockInfo, sockInfo.buf, dataSize); // 将远程服务器返回的数据发送给客户端
+        if (READ_ERROR == result || READ_END == result) {
+            return 0;
+        }
+
+        if (isEnd) {
+            if (sockInfo.bufSize > dataSize) {
+                sockInfo.bufSize -= dataSize;
+                preBuf = (char*)calloc(sockInfo.bufSize + 1, 1);
+                memcpy(preBuf, sockInfo.buf + dataSize, sockInfo.bufSize);
+                free(sockInfo.buf);
+                sockInfo.buf = preBuf;
+            } else {
+                free(sockInfo.buf);
+                sockInfo.buf = NULL;
+                sockInfo.bufSize = 0;
+            }
+        } else {
+            preBuf = sockInfo.buf;
+            preBufSize = sockInfo.bufSize;
+            sockInfo.buf = NULL;
+            sockInfo.bufSize = 0;
+        }
+    }
+
+    return 1;
+}
+
 int forward(SockInfo& sockInfo) { // 转发http/https请求
     SockInfo& remoteSockInfo = *sockInfo.remoteSockInfo;
-    HttpHeader* header = NULL;
+    HttpHeader* header = sockInfo.header;
+    string boundary = "";
     char* req = NULL;
     int hasError = 0;
     ssize_t reqSize = 0;
     ssize_t result = 0;
 
+    sendTimeToLacal(sockInfo, TIME_REQ_START); // request-begin
     httpUtils.createReqData(sockInfo, req, reqSize);
-    sendTimeToLacal(sockInfo, TIME_REQ_START);
-    result = httpUtils.writeData(*sockInfo.remoteSockInfo, req, reqSize); // 转发客户端请求到远程服务器
-    sendTimeToLacal(sockInfo, TIME_REQ_END);
+    result = httpUtils.writeData(*sockInfo.remoteSockInfo, req, reqSize); // 转发客户端请求头
     free(req);
-
     if (READ_ERROR == result || READ_END == result) {
         return 0;
     }
+    boundary = httpUtils.getBoundary(header);
+    if (header->contentLenth || boundary.size()) {
+        if (!reciveBody(sockInfo)) { // 读取和转发客户端请求体
+            return 0;
+        }
+    }
+    sendTimeToLacal(sockInfo, TIME_REQ_END); // request-end
 
-    httpUtils.waiteData(*sockInfo.remoteSockInfo);
-    sendTimeToLacal(sockInfo, TIME_RES_START);
     header = httpUtils.reciveHeader(*sockInfo.remoteSockInfo, hasError); // 读取远程服务器的响应头
-    sendTimeToLacal(sockInfo, TIME_RES_END);
-
     if (hasError) {
         return 0;
     }
 
-    if (strcmp(sockInfo.header->method, "HEAD") != 0) { // HEAD请求没有响应体，即使有，也应该丢弃
-        httpUtils.reciveBody(*sockInfo.remoteSockInfo, hasError); // 读取远程服务器的响应体
+    httpUtils.waiteData(*sockInfo.remoteSockInfo);
 
-        if (hasError) {
-            return 0;
-        }
-    }
-
-    int dataSize = remoteSockInfo.reqSize + remoteSockInfo.bodySize;
-    char* data = (char*)calloc(dataSize, 1);
-    memcpy(data, remoteSockInfo.head, remoteSockInfo.reqSize);
-
-    if (remoteSockInfo.bodySize) {
-        memcpy(data + remoteSockInfo.reqSize, remoteSockInfo.body, remoteSockInfo.bodySize);
-    }
-
-    result = httpUtils.writeData(sockInfo, data, dataSize); // 将远程服务器返回的数据发送给客户端
-    sendRecordToLacal(sockInfo, MSG_RES, data, dataSize);
+    sendTimeToLacal(sockInfo, TIME_RES_START); // response-begin
+    char* data = (char*)calloc(remoteSockInfo.headSize, 1);
+    memcpy(data, remoteSockInfo.head, remoteSockInfo.headSize);
+    sendRecordToLacal(sockInfo, MSG_RES_HEAD, data, remoteSockInfo.headSize);
+    result = httpUtils.writeData(sockInfo, data, remoteSockInfo.headSize); // 转发服务端响应头
     free(data);
-
     if (READ_ERROR == result || READ_END == result) {
         return 0;
     }
+    boundary = httpUtils.getBoundary(sockInfo.remoteSockInfo->header);
+    if (strcmp(sockInfo.header->method, "HEAD") != 0 && (header->contentLenth || boundary.size())) { // HEAD请求没有响应体，即使有，也应该丢弃
+        if (!reciveBody(*sockInfo.remoteSockInfo)) { // 读取和转发服务端响应体
+            return 0;
+        }
+    }
+    sendTimeToLacal(sockInfo, TIME_RES_END);// response-end
 
     if (header->status == 101 && header->upgrade && strcmp(header->upgrade, "websocket") == 0) { // webscoket连接成功
         pthread_t remoteTid;

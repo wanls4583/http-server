@@ -121,8 +121,9 @@ void SockContainer::resetSockInfoData(SockInfo& sockInfo) {
         sockInfo.buf = NULL;
     }
 
-    sockInfo.reqSize = 0;
+    sockInfo.headSize = 0;
     sockInfo.bodySize = 0;
+    sockInfo.bodyIndex = 0;
 
     free(sockInfo.tlsHeader);
     sockInfo.tlsHeader = NULL;

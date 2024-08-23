@@ -29,8 +29,9 @@ typedef struct SockInfo {
     int port;
 
     ssize_t bufSize;
-    ssize_t reqSize;
+    ssize_t headSize;
     ssize_t bodySize;
+    ssize_t bodyIndex;
 
     char* ip;
     char* tlsHeader;

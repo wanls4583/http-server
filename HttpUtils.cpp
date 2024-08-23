@@ -252,98 +252,8 @@ char* HttpUtils::getSecWebSocketAccept(SockInfo& sockInfo) {
     return result;
 }
 
-void HttpUtils::preReciveHeader(SockInfo& sockInfo, int& hasError) {
-    ssize_t bufSize = 0, count = 0;
-    int len = 257, endTryTimes = 0, loop = 0;
-    char* buf = (char*)calloc(len, 1);
-
-    // cout << "preReciveHeader:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
-    while (count <= 0) {
-        bufSize = this->preReadData(sockInfo, buf + count, len);
-        checkError(sockInfo, bufSize, endTryTimes, loop, hasError);
-
-        if (hasError) {
-            break;
-        } else if (loop) {
-            loop = 0;
-            continue;
-        }
-        count += bufSize;
-    }
-
-    if (!hasError) {
-        if (buf[0] == 0x16 && buf[1] == 0x03 && buf[2] == 0x01 && buf[5] == 0x01) {
-            sockInfo.tlsHeader = buf;
-        } else if (buf[0] == 0x05 && buf[1] == bufSize - 2) {
-            // socks协商请求
-            // VER（1字节）：协议版本，socks5为0x05
-            // NMETHODS（1字节）：支持认证方法的数量
-            // METHODS（可变长度，NMETHODS字节）
-            sockInfo.socksHeader = buf;
-            sockInfo.isProxy = 1;
-        }
-    }
-    // cout << "preReciveHeader-end:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
-}
-
-HttpHeader* HttpUtils::reciveHeader(SockInfo& sockInfo, int& hasError) {
-    HttpHeader* header = NULL;
-    ssize_t bufSize = 0;
-    int endTryTimes = 0, loop = 0;
-
-    // cout << "reciveHeader:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
-    while (!sockInfo.header) {
-        ssize_t pos = kmpStrstr(sockInfo.buf, "\r\n\r\n", sockInfo.bufSize, 4);
-
-        if (pos != -1) {
-            sockInfo.reqSize = pos + 4;
-            sockInfo.head = (char*)calloc(sockInfo.reqSize + 1, 1);
-            memcpy(sockInfo.head, sockInfo.buf, sockInfo.reqSize);
-            if (string(sockInfo.head).find("HTTP") == 0) { // 响应头，HTTP/1.1 200 OK
-                header = this->getHttpResHeader(sockInfo);
-            } else { // 请求头，GET /index.html HTTP/1.1
-                header = this->getHttpReqHeader(sockInfo);
-            }
-            sockInfo.header = header;
-
-            sockInfo.bufSize -= sockInfo.reqSize;
-            if (sockInfo.bufSize) {
-                char* buf = (char*)calloc(sockInfo.bufSize + 1, 1);
-                memcpy(buf, sockInfo.buf + sockInfo.reqSize, sockInfo.bufSize);
-                free(sockInfo.buf);
-                sockInfo.buf = buf;
-            } else {
-                free(sockInfo.buf);
-                sockInfo.buf = NULL;
-            }
-            break;
-        }
-
-        if (sockInfo.bufSize > MAX_REQ_SIZE) { // 请求头超出限制
-            break;
-        }
-
-        bufSize = this->reciveData(sockInfo);
-
-        checkError(sockInfo, bufSize, endTryTimes, loop, hasError);
-
-        if (hasError) {
-            break;
-        }
-    }
-    // cout << "reciveHeader-end:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
-
-    return header;
-}
-
-void HttpUtils::reciveBody(SockInfo& sockInfo, int& hasError) {
-    ssize_t preSize = 0;
-    ssize_t bufSize = sockInfo.bufSize;
-    HttpHeader* header = sockInfo.header;
+string HttpUtils::getBoundary(HttpHeader* header) {
     string boundary = "";
-    int endTryTimes = 0, loop = 0;
-
-    // cout << "reciveBody:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
     if (header->boundary) {
         boundary += "--";
         boundary += header->boundary;
@@ -393,7 +303,101 @@ void HttpUtils::reciveBody(SockInfo& sockInfo, int& hasError) {
             boundary += "\r\n\r\n";
         }
     }
+    return boundary;
+}
 
+void HttpUtils::preReciveHeader(SockInfo& sockInfo, int& hasError) {
+    ssize_t bufSize = 0, count = 0;
+    int len = 257, endTryTimes = 0, loop = 0;
+    char* buf = (char*)calloc(len, 1);
+
+    // cout << "preReciveHeader:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
+    while (count <= 0) {
+        bufSize = this->preReadData(sockInfo, buf + count, len);
+        checkError(sockInfo, bufSize, endTryTimes, loop, hasError);
+
+        if (hasError) {
+            break;
+        } else if (loop) {
+            loop = 0;
+            continue;
+        }
+        count += bufSize;
+    }
+
+    if (!hasError) {
+        if (buf[0] == 0x16 && buf[1] == 0x03 && buf[2] == 0x01 && buf[5] == 0x01) {
+            sockInfo.tlsHeader = buf;
+        } else if (buf[0] == 0x05 && buf[1] == bufSize - 2) {
+            // socks协商请求
+            // VER（1字节）：协议版本，socks5为0x05
+            // NMETHODS（1字节）：支持认证方法的数量
+            // METHODS（可变长度，NMETHODS字节）
+            sockInfo.socksHeader = buf;
+            sockInfo.isProxy = 1;
+        }
+    }
+    // cout << "preReciveHeader-end:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
+}
+
+HttpHeader* HttpUtils::reciveHeader(SockInfo& sockInfo, int& hasError) {
+    HttpHeader* header = NULL;
+    ssize_t bufSize = 0;
+    int endTryTimes = 0, loop = 0;
+
+    // cout << "reciveHeader:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
+    while (!sockInfo.header) {
+        ssize_t pos = kmpStrstr(sockInfo.buf, "\r\n\r\n", sockInfo.bufSize, 4);
+
+        if (pos != -1) {
+            sockInfo.headSize = pos + 4;
+            sockInfo.head = (char*)calloc(sockInfo.headSize + 1, 1);
+            memcpy(sockInfo.head, sockInfo.buf, sockInfo.headSize);
+            if (string(sockInfo.head).find("HTTP") == 0) { // 响应头，HTTP/1.1 200 OK
+                header = this->getHttpResHeader(sockInfo);
+            } else { // 请求头，GET /index.html HTTP/1.1
+                header = this->getHttpReqHeader(sockInfo);
+            }
+            sockInfo.header = header;
+
+            sockInfo.bufSize -= sockInfo.headSize;
+            if (sockInfo.bufSize) {
+                char* buf = (char*)calloc(sockInfo.bufSize + 1, 1);
+                memcpy(buf, sockInfo.buf + sockInfo.headSize, sockInfo.bufSize);
+                free(sockInfo.buf);
+                sockInfo.buf = buf;
+            } else {
+                free(sockInfo.buf);
+                sockInfo.buf = NULL;
+            }
+            break;
+        }
+
+        if (sockInfo.bufSize > MAX_REQ_SIZE) { // 请求头超出限制
+            break;
+        }
+
+        bufSize = this->reciveData(sockInfo);
+
+        checkError(sockInfo, bufSize, endTryTimes, loop, hasError);
+
+        if (hasError) {
+            break;
+        }
+    }
+    // cout << "reciveHeader-end:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
+
+    return header;
+}
+
+void HttpUtils::reciveBody(SockInfo& sockInfo, int& hasError) {
+    ssize_t preSize = 0;
+    ssize_t bufSize = sockInfo.bufSize;
+    HttpHeader* header = sockInfo.header;
+    string boundary = this->getBoundary(sockInfo.header);
+    int endTryTimes = 0, loop = 0;
+
+    // cout << "reciveBody:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
     while (1) {
         if (header->contentLenth) {
             if (header->contentLenth <= sockInfo.bufSize) {
@@ -444,7 +448,6 @@ void HttpUtils::reciveBody(SockInfo& sockInfo, int& hasError) {
             sockInfo.buf = NULL;
         }
     }
-
     // cout << "reciveBody-end:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
 }
 
@@ -717,6 +720,11 @@ void HttpUtils::checkError(SockInfo& sockInfo, ssize_t bufSize, int& endTryTimes
         }
         usleep(this->cpuTime);
         loop = 1;
+    } else {
+        if (endTryTimes != -1) {
+            endTryTimes = 0;
+        }
+        loop = 0;
     }
 }
 
@@ -869,9 +877,8 @@ void HttpUtils::createReqData(SockInfo& sockInfo, char*& req, ssize_t& reqSize) 
     firstLine += " ";
     firstLine += header->protocol;
 
-    reqSize = firstLine.size() + sockInfo.reqSize - pos + sockInfo.bodySize;
+    reqSize = firstLine.size() + sockInfo.headSize - pos + sockInfo.bodySize;
     req = (char*)calloc(reqSize + 1, 1);
     memcpy(req, firstLine.c_str(), firstLine.size());
-    memcpy(req + firstLine.size(), sockInfo.head + pos, sockInfo.reqSize - pos);
-    memcpy(req + firstLine.size() + sockInfo.reqSize - pos, sockInfo.body, sockInfo.bodySize);
+    memcpy(req + firstLine.size(), sockInfo.head + pos, sockInfo.headSize - pos);
 }
