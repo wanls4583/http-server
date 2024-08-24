@@ -27,8 +27,8 @@ public:
     HttpUtils();
     ~HttpUtils();
     char* getSecWebSocketAccept(SockInfo& sockInfo);
-    string getBoundary(HttpHeader *header);
-    void checkError(SockInfo& sockInfo, ssize_t bufSize, int& endTryTimes, int& loop, int& hasError);
+    string getBoundary(HttpHeader* header);
+    void checkError(SockInfo& sockInfo, ssize_t& bufSize, int& endTryTimes, int& loop, int& hasError);
     int checkMethod(const char* method);
     void reciveBody(SockInfo& sockInfo, int& hasError);
     WsFragment* reciveWsFragment(SockInfo& sockInfo, int& hasError);

@@ -35,6 +35,7 @@ pthread_mutex_t serverMutex;
 int initServSock();
 void* initClntSock(void* arg);
 int initRemoteSock(SockInfo& sockInfo);
+ssize_t getChunkSize(SockInfo& sockInfo, ssize_t& numSize);
 int reciveBody(SockInfo& sockInfo);
 int forward(SockInfo& sockInfo);
 void* forwardWebocket(void* arg);
@@ -542,24 +543,53 @@ void sendRecordToLacal(SockInfo& sockInfo, int type, char* data, ssize_t size) {
     free(msg);
 }
 
+ssize_t getChunkSize(SockInfo& sockInfo, ssize_t& numSize) {
+    string num = "";
+    ssize_t i = 0;
+    while (sockInfo.buf[i] >= '0' && sockInfo.buf[i] <= '9' ||
+        sockInfo.buf[i] >= 'a' && sockInfo.buf[i] <= 'z' ||
+        sockInfo.buf[i] >= 'A' && sockInfo.buf[i] <= 'Z') {
+        num += sockInfo.buf[i];
+        i++;
+    }
+    if (i == 0) { // 数据错误
+        return -2;
+    }
+    if (sockInfo.bufSize < i + 2) { // 待接收数据
+        return -1;
+    }
+    if (sockInfo.buf[i] != '\r' || sockInfo.buf[i + 1] != '\n') { // 数据错误
+        return -2;
+    }
+    numSize = i + 2;
+
+    return stol(num, NULL, 16);
+}
+
 int reciveBody(SockInfo& sockInfo) {
     HttpHeader* header = sockInfo.header;
     string boundary = httpUtils.getBoundary(header);
-    ssize_t bufSize = 0;
+    ssize_t bufSize = sockInfo.bufSize;
     ssize_t preBufSize = 0;
     ssize_t bodySize = 0;
     ssize_t dataSize = 0;
+    ssize_t chunkSize = -1, numSize = 0;
     char* preBuf = NULL;
+    int isChunk = header->transferEncoding && !strcmp(header->transferEncoding, "chunked") ? 1 : 0;
     int endTryTimes = 0, loop = 0, isEnd = 0, hasError = 0;
+
     while (!isEnd) {
         dataSize = 0;
-        bufSize = sockInfo.bufSize;
         while (!bufSize) {
             bufSize = httpUtils.reciveData(sockInfo);
             httpUtils.checkError(sockInfo, bufSize, endTryTimes, loop, hasError);
             if (hasError) {
-                free(preBuf);
+                if (preBuf != sockInfo.buf) {
+                    free(preBuf);
+                }
                 return 0;
+            } else if (loop) {
+                bufSize = 0;
             }
         }
         if (header->contentLenth) {
@@ -569,17 +599,44 @@ int reciveBody(SockInfo& sockInfo) {
             } else {
                 bodySize += sockInfo.bufSize;
             }
+        } else if (isChunk) {
+            chunkSize = chunkSize == -1 ? getChunkSize(sockInfo, numSize) : chunkSize;
+            if (chunkSize == -2) { // 数据错误
+                return 0;
+            } else if (chunkSize == -1) { // 待接收数据用来解析chunk大小
+                continue;
+            } else if (chunkSize == 0) { // 最后一个chunk
+                dataSize = numSize;
+                isChunk = 0;
+                if (!header->trailer) {
+                    boundary = "\r\n";
+                } else {
+                    boundary = "\r\n\r\n";
+                }
+            } else if (bodySize + sockInfo.bufSize - numSize >= chunkSize + 2) { // 接收满一个chunk，加2是因为一个chunk后面会跟着\r\n
+                dataSize = chunkSize + 2 + numSize - bodySize;
+                chunkSize = -1;
+                bodySize = 0;
+            } else {
+                bodySize += sockInfo.bufSize;
+            }
         } else if (boundary.size()) {
             preBuf = (char*)realloc(preBuf, preBufSize + sockInfo.bufSize);
             memcpy(preBuf + preBufSize, sockInfo.buf, sockInfo.bufSize);
             ssize_t preSize = preBufSize > boundary.size() ? preBufSize - boundary.size() : 0;
             ssize_t pos = kmpStrstr(preBuf, boundary.c_str(), preBufSize + sockInfo.bufSize, boundary.size(), preSize);
+            free(preBuf);
             if (pos != -1) {
                 dataSize = pos + boundary.size() - preBufSize;
                 isEnd = true;
+            } else if (sockInfo.bufSize < boundary.size()) {
+                bufSize = 0;
+                continue;
+            } else {
+                preBuf = sockInfo.buf;
+                preBufSize = sockInfo.bufSize;
             }
         }
-        free(preBuf);
         dataSize = dataSize ? dataSize : sockInfo.bufSize;
         sendRecordToLacal(sockInfo, MSG_RES_BODY, sockInfo.buf, dataSize);
         if (isEnd) {
@@ -591,23 +648,20 @@ int reciveBody(SockInfo& sockInfo) {
             return 0;
         }
 
-        if (isEnd) {
-            if (sockInfo.bufSize > dataSize) {
-                sockInfo.bufSize -= dataSize;
-                preBuf = (char*)calloc(sockInfo.bufSize + 1, 1);
-                memcpy(preBuf, sockInfo.buf + dataSize, sockInfo.bufSize);
-                free(sockInfo.buf);
-                sockInfo.buf = preBuf;
-            } else {
-                free(sockInfo.buf);
-                sockInfo.buf = NULL;
-                sockInfo.bufSize = 0;
-            }
+        if (sockInfo.bufSize > dataSize) {
+            sockInfo.bufSize -= dataSize;
+            char* data = (char*)calloc(sockInfo.bufSize + 1, 1);
+            memcpy(data, sockInfo.buf + dataSize, sockInfo.bufSize);
+            free(sockInfo.buf);
+            sockInfo.buf = data;
+            bufSize = sockInfo.bufSize;
         } else {
-            preBuf = sockInfo.buf;
-            preBufSize = sockInfo.bufSize;
+            if (preBuf != sockInfo.buf) {
+                free(sockInfo.buf);
+            }
             sockInfo.buf = NULL;
             sockInfo.bufSize = 0;
+            bufSize = 0;
         }
     }
 
@@ -654,7 +708,7 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
     if (READ_ERROR == result || READ_END == result) {
         return 0;
     }
-    boundary = httpUtils.getBoundary(sockInfo.remoteSockInfo->header);
+    boundary = httpUtils.getBoundary(header);
     if (strcmp(sockInfo.header->method, "HEAD") != 0 && (header->contentLenth || boundary.size())) { // HEAD请求没有响应体，即使有，也应该丢弃
         if (!reciveBody(*sockInfo.remoteSockInfo)) { // 读取和转发服务端响应体
             return 0;

@@ -702,7 +702,7 @@ ssize_t HttpUtils::writeData(SockInfo& sockInfo, char* buf, ssize_t length) {
     return result;
 }
 
-void HttpUtils::checkError(SockInfo& sockInfo, ssize_t bufSize, int& endTryTimes, int& loop, int& hasError) {
+void HttpUtils::checkError(SockInfo& sockInfo, ssize_t& bufSize, int& endTryTimes, int& loop, int& hasError) {
     if (READ_ERROR == bufSize) {
         hasError = 1;
         return;
