@@ -26,11 +26,12 @@ WsFragment* WsUtils::parseFragment(SockInfo& sockInfo) {
     bufSize--;
     index++;
 
+    fragment->fragmentSize = 2; // fragment至少有两个字节，即使是数据长度为0（例如 close:0x08、ping:0x09 等操作）
+
     if (fragment->mask == 0 && fragment->dataLen == 0) { // 空数据祯
         return fragment;
     }
 
-    fragment->fragmentSize = 2; // fragment至少有两个字节，即使是数据长度为0（例如 close:0x08、ping:0x09 等操作）
     if (fragment->dataLen == 126) {
         checkFragment(bufSize - 2, fragment);
         fragment->dataLen2 = (buf[2] << 8) | buf[3];
@@ -63,9 +64,9 @@ WsFragment* WsUtils::parseFragment(SockInfo& sockInfo) {
         fragment->fragmentSize += 4;
     }
 
-    u_int16_t len = fragment->dataLen2 ? fragment->dataLen2 : fragment->dataLen;
+    u_int64_t len = fragment->dataLen2 ? fragment->dataLen2 : fragment->dataLen;
 
-    if (bufSize != len) {
+    if (bufSize < len) {
         free(fragment->maskKey);
         free(fragment);
         return NULL;
@@ -75,7 +76,7 @@ WsFragment* WsUtils::parseFragment(SockInfo& sockInfo) {
     memcpy(fragment->data, buf + index, len);
 
     if (fragment->mask) {
-        for (u_int16_t i = 0; i < len; i++) {
+        for (u_int64_t i = 0; i < len; i++) {
             int j = i % 4;
             fragment->data[i] = fragment->data[i] ^ fragment->maskKey[j];
         }
@@ -148,7 +149,7 @@ unsigned char* WsUtils::createMsg(WsFragment* fragment) {
     }
 
     if (fragment->mask) {
-        for (u_int16_t i = 0; i < dataLen; i++) {
+        for (u_int64_t i = 0; i < dataLen; i++) {
             int j = i % 4;
             msg[index + i] = msg[index + i] ^ fragment->maskKey[j];
         }
@@ -198,7 +199,7 @@ u_int64_t WsUtils::getMsgLength(WsFragment* fragment) {
 unsigned char* WsUtils::getMsg(WsFragment* fragment) {
     unsigned char* msg = NULL;
     unsigned char* tmp = NULL;
-    u_int16_t len = getMsgLength(fragment);
+    u_int64_t len = getMsgLength(fragment);
 
     if (len) {
         msg = (unsigned char*)calloc(len + 1, 1);

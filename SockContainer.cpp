@@ -161,9 +161,8 @@ void SockContainer::shutdownSock(SockInfo* sockInfo) {
     int singleMode = 0;
     if (!sockInfo) {
         sockInfo = (SockInfo*)pthread_getspecific(ptKey);
-    } else if (sockInfo->localSockInfo) {
-        sockInfo = sockInfo->localSockInfo;
-        singleMode = 1;
+    } else {
+        singleMode = 1; // 只关闭一端
     }
 
     this->closeSock(*sockInfo);

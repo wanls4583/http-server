@@ -11,6 +11,10 @@
 
 using namespace std;
 
+char* to_lower(char* s);
+char* to_upper(char* s);
+string to_lower(string s);
+string to_upper(string s);
 int split(char**& strs, const string& s, const char delim);
 int* getLink(const char* p, ssize_t pSize);
 int kmpStrstr(const char* s, const char* p, ssize_t sSize, ssize_t pSize, ssize_t start = 0);

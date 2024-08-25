@@ -249,6 +249,7 @@ void* initClntSock(void* arg) {
 
             if (!sockInfo.remoteSockInfo) { // 新建远程连接
                 if (!initRemoteSock(sockInfo)) {
+                    usleep(1000 * 500); // 留出时间供客户端根据端口查询进程
                     sockContainer.shutdownSock();
                     return NULL;
                 }
@@ -261,7 +262,9 @@ void* initClntSock(void* arg) {
             }
 
             if (!forward(sockInfo)) {
-                sockContainer.shutdownSock();
+                if (!sockInfo.isWebSock) { // websocket通过单边去关闭
+                    sockContainer.shutdownSock();
+                }
                 return NULL;
             }
 
@@ -298,8 +301,6 @@ int initRemoteSock(SockInfo& sockInfo) {
     sendTimeToLacal(sockInfo, TIME_DNS_END);
 
     if (!host || !host->h_length) {
-        usleep(1000 * 500); // 留出时间供客户端根据端口查询进程
-        sockContainer.shutdownSock();
         return 0;
     }
     // https://securepubads.g.doubleclick.net/pcs/view
@@ -450,8 +451,10 @@ int initLocalWebscoket(SockInfo& sockInfo) {
                 } else if (strcmp(msg, "ping") == 0) {
                     result = wsUtils.sendMsg(sockInfo, (unsigned char*)"pong", 4);
                 }
-                if (READ_ERROR == result || READ_END == result) {
-                    return -1;
+                if (READ_ERROR == result) {
+                    sockContainer.shutdownSock(&sockInfo);
+                    sockContainer.wsScokInfo = NULL;
+                    break;
                 }
             }
         }
@@ -576,20 +579,18 @@ int reciveBody(SockInfo& sockInfo) {
     ssize_t chunkSize = -1, numSize = 0;
     char* preBuf = NULL;
     int isChunk = header->transferEncoding && !strcmp(header->transferEncoding, "chunked") ? 1 : 0;
-    int endTryTimes = 0, loop = 0, isEnd = 0, hasError = 0;
+    int endTryTimes = -1, isEnd = 0, hasError = 0;
 
     while (!isEnd) {
         dataSize = 0;
         while (!bufSize) {
             bufSize = httpUtils.reciveData(sockInfo);
-            httpUtils.checkError(sockInfo, bufSize, endTryTimes, loop, hasError);
+            httpUtils.checkError(sockInfo, bufSize, endTryTimes, hasError);
             if (hasError) {
                 if (preBuf != sockInfo.buf) {
                     free(preBuf);
                 }
                 return 0;
-            } else if (loop) {
-                bufSize = 0;
             }
         }
         if (header->contentLenth) {
@@ -604,6 +605,7 @@ int reciveBody(SockInfo& sockInfo) {
             if (chunkSize == -2) { // 数据错误
                 return 0;
             } else if (chunkSize == -1) { // 待接收数据用来解析chunk大小
+                bufSize = 0;
                 continue;
             } else if (chunkSize == 0) { // 最后一个chunk
                 dataSize = numSize;
@@ -717,15 +719,14 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
     sendTimeToLacal(sockInfo, TIME_RES_END);// response-end
 
     if (header->status == 101 && header->upgrade && strcmp(header->upgrade, "websocket") == 0) { // webscoket连接成功
-        pthread_t remoteTid;
-
-        pthread_create(&remoteTid, NULL, forwardWebocket, sockInfo.remoteSockInfo);
-        pthread_detach(remoteTid);
-
-        // pthread_t为结构体，引用赋值需要再初始化以后再赋值，否则里面的元素是空的
-        sockInfo.remoteSockInfo->wsTid = remoteTid;
         sockInfo.remoteSockInfo->isWebSock = 1;
         sockInfo.isWebSock = 1;
+
+        pthread_t remoteTid;
+        pthread_create(&remoteTid, NULL, forwardWebocket, sockInfo.remoteSockInfo);
+        pthread_detach(remoteTid);
+        // pthread_t为结构体，引用赋值需要再初始化以后再赋值，否则里面的元素是空的
+        sockInfo.remoteSockInfo->wsTid = remoteTid;
         forwardWebocket(&sockInfo);
 
         return 0;
@@ -741,11 +742,8 @@ void* forwardWebocket(void* arg) { // 转发webscoket请求
     u_int64_t sockId = sockInfo.sockId;
     int sock = sockInfo.sock;
     while (1) {
-        // cout << "reciveWsFragment:" << (sockInfo.localSockInfo ? "server" : "client") << sockId << ":" << sock << endl;
         WsFragment* wsFragment = httpUtils.reciveWsFragment(sockInfo, hasError);
         if (hasError) {
-            // cout << (sockInfo.localSockInfo ? "server" : "client") << ":shutsock1:" << sockId << ":" << sock << endl;
-            // 通过主线程去关闭
             sockContainer.shutdownSock(&sockInfo);
             break;
         }
@@ -755,22 +753,20 @@ void* forwardWebocket(void* arg) { // 转发webscoket请求
         } else if (sockInfo.localSockInfo) {
             result = httpUtils.writeData(*sockInfo.localSockInfo, (char*)buf, wsFragment->fragmentSize);
         }
-        if (READ_ERROR == result || READ_END == result) {
-            // cout << (sockInfo.localSockInfo ? "server" : "client") << ":shutsock2:" << sockId << ":" << sock << endl;
+        if (READ_ERROR == result) {
             sockContainer.shutdownSock(&sockInfo);
             break;
         }
         if (wsFragment->opCode == 0x08) {
-            if (sockInfo.remoteSockInfo) {
-                wsUtils.close(*sockInfo.remoteSockInfo);
-            } else if (sockInfo.localSockInfo) {
-                wsUtils.close(*sockInfo.localSockInfo);
-            }
-            // cout << (sockInfo.localSockInfo ? "server" : "client") << ":shutsock3:" << sockId << ":" << sock << endl;
-            usleep(1000);
             sockContainer.shutdownSock(&sockInfo);
             break;
         }
+        // if ((sockInfo.remoteSockInfo && sockInfo.remoteSockInfo->state == SOCK_STATE_CLOSED) ||
+        //     (sockInfo.localSockInfo && sockInfo.localSockInfo->state == SOCK_STATE_CLOSED)) { // 对端已经关闭
+        //     wsUtils.close(sockInfo);
+        //     sockContainer.shutdownSock(&sockInfo);
+        //     break;
+        // }
     }
 
     return NULL;

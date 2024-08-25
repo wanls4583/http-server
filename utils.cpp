@@ -3,6 +3,46 @@
 #include <openssl/ssl.h>
 #include <unistd.h>
 
+char* to_lower(char* s) {
+    ssize_t len = strlen(s);
+    for (ssize_t i = 0; i < len; i++) {
+        if (s[i] >= 'A' && s[i] <= 'Z') {
+            s[i] += 32;
+        }
+    }
+    return s;
+}
+
+char* to_upper(char* s) {
+    ssize_t len = strlen(s);
+    for (ssize_t i = 0; i < len; i++) {
+        if (s[i] >= 'a' && s[i] <= 'z') {
+            s[i] -= 32;
+        }
+    }
+    return s;
+}
+
+string to_lower(string s) {
+    ssize_t len = s.size();
+    for (ssize_t i = 0; i < len; i++) {
+        if (s[i] >= 'A' && s[i] <= 'Z') {
+            s[i] += 32;
+        }
+    }
+    return s;
+}
+
+string to_upper(string s) {
+    ssize_t len = s.size();
+    for (ssize_t i = 0; i < len; i++) {
+        if (s[i] >= 'a' && s[i] <= 'z') {
+            s[i] -= 32;
+        }
+    }
+    return s;
+}
+
 int split(char**& strs, const string& s, const char delim = ' ') {
     vector<string> sv;
     istringstream iss(s);
