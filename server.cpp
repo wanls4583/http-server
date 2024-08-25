@@ -699,7 +699,9 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
         return 0;
     }
 
-    httpUtils.waiteData(*sockInfo.remoteSockInfo);
+    if (header->status != 101) {
+        httpUtils.waiteData(*sockInfo.remoteSockInfo);
+    }
 
     sendTimeToLacal(sockInfo, TIME_RES_START); // response-begin
     char* data = (char*)calloc(remoteSockInfo.headSize, 1);
