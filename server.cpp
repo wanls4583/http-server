@@ -753,20 +753,16 @@ void* forwardWebocket(void* arg) { // 转发webscoket请求
         } else if (sockInfo.localSockInfo) {
             result = httpUtils.writeData(*sockInfo.localSockInfo, (char*)buf, wsFragment->fragmentSize);
         }
-        if (READ_ERROR == result) {
+        if (READ_ERROR == result || wsFragment->opCode == 0x08) {
             sockContainer.shutdownSock(&sockInfo);
             break;
         }
-        if (wsFragment->opCode == 0x08) {
+        if ((sockInfo.remoteSockInfo && sockInfo.remoteSockInfo->state == SOCK_STATE_CLOSED) ||
+            (sockInfo.localSockInfo && sockInfo.localSockInfo->state == SOCK_STATE_CLOSED)) { // 对端已经关闭
+            wsUtils.close(sockInfo);
             sockContainer.shutdownSock(&sockInfo);
             break;
         }
-        // if ((sockInfo.remoteSockInfo && sockInfo.remoteSockInfo->state == SOCK_STATE_CLOSED) ||
-        //     (sockInfo.localSockInfo && sockInfo.localSockInfo->state == SOCK_STATE_CLOSED)) { // 对端已经关闭
-        //     wsUtils.close(sockInfo);
-        //     sockContainer.shutdownSock(&sockInfo);
-        //     break;
-        // }
     }
 
     return NULL;

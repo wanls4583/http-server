@@ -476,14 +476,13 @@ WsFragment* HttpUtils::reciveWsFragment(SockInfo& sockInfo, int& hasError) {
         }
 
         if (sockInfo.bufSize > MAX_BODY_SIZE) { // 请求体超出限制
-            bufSize = READ_ERROR;
+            hasError = 1;
             break;
         }
 
         bufSize = this->reciveData(sockInfo);
-
+        ssize_t bufSize1 = bufSize;
         checkError(sockInfo, bufSize, endTryTimes, hasError);
-
         if (hasError) {
             break;
         }
@@ -581,7 +580,7 @@ void HttpUtils::reciveSocksReqHeader(SockInfo& sockInfo, int& hasError) {
 }
 
 ssize_t HttpUtils::waiteData(SockInfo& sockInfo) {
-    ssize_t bufSize = 0;
+    ssize_t bufSize = sockInfo.bufSize;
     int hasError = 0, endTryTimes = 0;
     char buf[1];
 
@@ -734,7 +733,7 @@ ssize_t HttpUtils::getSockErr(SockInfo& sockInfo, ssize_t err) {
     if (sockInfo.ssl == NULL) {
         if (err > 0) { // 大于0代表写入或者读取成功
             result = err;
-        } else if (errno == EINTR || errno == EWOULDBLOCK || errno == EAGAIN) {
+        } else if (errno == EINTR || errno == EAGAIN || errno == EINPROGRESS || errno == EALREADY) {
             result = READ_AGAIN;
         } else {
             result = READ_ERROR;
@@ -743,7 +742,17 @@ ssize_t HttpUtils::getSockErr(SockInfo& sockInfo, ssize_t err) {
         int nRes = SSL_get_error(sockInfo.ssl, err);
         if (nRes == SSL_ERROR_NONE) { // SSL_ERROR_NONE代表成功
             result = err;
-        } else if (SSL_ERROR_WANT_READ == nRes || SSL_ERROR_WANT_WRITE == nRes) {
+        } else if (
+            SSL_ERROR_WANT_READ == nRes
+            || SSL_ERROR_WANT_WRITE == nRes
+            || SSL_ERROR_WANT_X509_LOOKUP == nRes
+            || SSL_ERROR_WANT_CONNECT == nRes
+            || SSL_ERROR_WANT_ACCEPT == nRes
+            || SSL_ERROR_WANT_ASYNC == nRes
+            || SSL_ERROR_WANT_ASYNC_JOB == nRes
+            || SSL_ERROR_WANT_CLIENT_HELLO_CB == nRes
+            || SSL_ERROR_SYSCALL == nRes && (errno == EINTR || errno == EAGAIN || errno == EINPROGRESS || errno == EALREADY)
+            ) {
             result = READ_AGAIN;
         } else {
             result = READ_ERROR;
