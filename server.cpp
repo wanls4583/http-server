@@ -593,7 +593,7 @@ int reciveBody(SockInfo& sockInfo) {
                 return 0;
             }
         }
-        if (header->contentLenth) {
+        if (header->contentLenth > 0) {
             if (header->contentLenth <= sockInfo.bufSize + bodySize) {
                 dataSize = header->contentLenth - bodySize;
                 isEnd = true;
@@ -687,7 +687,7 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
         return 0;
     }
     boundary = httpUtils.getBoundary(header);
-    if (header->contentLenth || boundary.size()) {
+    if (header->contentLenth > 0 || boundary.size()) {
         if (!reciveBody(sockInfo)) { // 读取和转发客户端请求体
             return 0;
         }
@@ -709,13 +709,6 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
     if (READ_ERROR == result || READ_END == result) {
         return 0;
     }
-    boundary = httpUtils.getBoundary(header);
-    if (strcmp(sockInfo.header->method, "HEAD") != 0 && (header->contentLenth || boundary.size())) { // HEAD请求没有响应体，即使有，也应该丢弃
-        if (!reciveBody(*sockInfo.remoteSockInfo)) { // 读取和转发服务端响应体
-            return 0;
-        }
-    }
-    sendTimeToLacal(sockInfo, TIME_RES_END);// response-end
 
     if (header->status == 101 && header->upgrade && strcmp(header->upgrade, "websocket") == 0) { // webscoket连接成功
         sockInfo.remoteSockInfo->isWebSock = 1;
@@ -730,6 +723,14 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
 
         return 0;
     }
+
+    boundary = httpUtils.getBoundary(header);
+    if (strcmp(sockInfo.header->method, "HEAD") != 0 && (header->contentLenth || boundary.size())) { // HEAD请求没有响应体，即使有，也应该丢弃
+        if (!reciveBody(*sockInfo.remoteSockInfo)) { // 读取和转发服务端响应体
+            return 0;
+        }
+    }
+    sendTimeToLacal(sockInfo, TIME_RES_END);// response-end
 
     return 1;
 }

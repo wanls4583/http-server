@@ -158,6 +158,8 @@ void HttpUtils::setHeaderKeyValue(HttpHeader* header, string head) {
     ssize_t pos = head.npos;
     string line = "", prop = "", val = "";
     int colonSize = 0;
+
+    header->contentLenth = -1; // 有些视频流长连接没有长度，此时也需要持续转发数据
     while ((pos = head.find("\r\n")) != head.npos) {
         line = head.substr(0, pos);
         head = head.substr(pos + 2);
@@ -418,7 +420,7 @@ void HttpUtils::reciveBody(SockInfo& sockInfo, int& hasError) {
                     break;
                 }
             }
-        } else if (header->contentLenth == 0) {
+        } else if (header->contentLenth <= 0) {
             break;
         }
 
