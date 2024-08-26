@@ -314,14 +314,13 @@ string HttpUtils::getBoundary(HttpHeader* header) {
 
 void HttpUtils::preReciveHeader(SockInfo& sockInfo, int& hasError) {
     ssize_t bufSize = 0, count = 0;
-    int len = 257, endTryTimes = 0;
+    int len = 257;
     char* buf = (char*)calloc(len, 1);
 
     // cout << "preReciveHeader:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
     while (count <= 0) {
         bufSize = this->preReadData(sockInfo, buf + count, len);
-        checkError(sockInfo, bufSize, endTryTimes, hasError);
-
+        checkError(sockInfo, bufSize, hasError);
         if (hasError) {
             break;
         }
@@ -346,7 +345,6 @@ void HttpUtils::preReciveHeader(SockInfo& sockInfo, int& hasError) {
 HttpHeader* HttpUtils::reciveHeader(SockInfo& sockInfo, int& hasError) {
     HttpHeader* header = NULL;
     ssize_t bufSize = 0;
-    int endTryTimes = 0;
 
     // cout << "reciveHeader:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
     while (!sockInfo.header) {
@@ -381,9 +379,7 @@ HttpHeader* HttpUtils::reciveHeader(SockInfo& sockInfo, int& hasError) {
         }
 
         bufSize = this->reciveData(sockInfo);
-
-        checkError(sockInfo, bufSize, endTryTimes, hasError);
-
+        checkError(sockInfo, bufSize, hasError);
         if (hasError) {
             break;
         }
@@ -398,7 +394,6 @@ void HttpUtils::reciveBody(SockInfo& sockInfo, int& hasError) {
     ssize_t bufSize = sockInfo.bufSize;
     HttpHeader* header = sockInfo.header;
     string boundary = this->getBoundary(sockInfo.header);
-    int endTryTimes = 0;
 
     // cout << "reciveBody:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
     while (1) {
@@ -431,9 +426,7 @@ void HttpUtils::reciveBody(SockInfo& sockInfo, int& hasError) {
 
         preSize = sockInfo.bufSize;
         bufSize = this->reciveData(sockInfo);
-
-        checkError(sockInfo, bufSize, endTryTimes, hasError);
-
+        checkError(sockInfo, bufSize, hasError);
         if (hasError) {
             break;
         }
@@ -457,7 +450,6 @@ void HttpUtils::reciveBody(SockInfo& sockInfo, int& hasError) {
 WsFragment* HttpUtils::reciveWsFragment(SockInfo& sockInfo, int& hasError) {
     ssize_t bufSize = sockInfo.bufSize;
     WsFragment* fragment = NULL;
-    int endTryTimes = -1;
 
     // cout << "reciveWsFragment:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
     while (1) {
@@ -483,8 +475,7 @@ WsFragment* HttpUtils::reciveWsFragment(SockInfo& sockInfo, int& hasError) {
         }
 
         bufSize = this->reciveData(sockInfo);
-        ssize_t bufSize1 = bufSize;
-        checkError(sockInfo, bufSize, endTryTimes, hasError);
+        checkError(sockInfo, bufSize, hasError);
         if (hasError) {
             break;
         }
@@ -509,14 +500,13 @@ WsFragment* HttpUtils::reciveWsFragment(SockInfo& sockInfo, int& hasError) {
 
 void HttpUtils::reciveSocksReqHeader(SockInfo& sockInfo, int& hasError) {
     ssize_t bufSize = 0, count = 0;
-    int len = 5, endTryTimes = 0;
+    int len = 5;
     char* buf = (char*)calloc(len + 1, 1);
 
     // cout << "reciveSocksReqHeader:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
     while (count < 5) {
         bufSize = this->preReadData(sockInfo, buf, len);
-        checkError(sockInfo, bufSize, endTryTimes, hasError);
-
+        checkError(sockInfo, bufSize, hasError);
         if (hasError) {
             break;
         }
@@ -541,8 +531,7 @@ void HttpUtils::reciveSocksReqHeader(SockInfo& sockInfo, int& hasError) {
         char* buf = (char*)calloc(len, 1);
         while (count < len) {
             bufSize = this->readData(sockInfo, buf, len);
-            checkError(sockInfo, bufSize, endTryTimes, hasError);
-
+            checkError(sockInfo, bufSize, hasError);
             if (hasError) {
                 break;
             }
@@ -583,14 +572,13 @@ void HttpUtils::reciveSocksReqHeader(SockInfo& sockInfo, int& hasError) {
 
 ssize_t HttpUtils::waiteData(SockInfo& sockInfo) {
     ssize_t bufSize = sockInfo.bufSize;
-    int hasError = 0, endTryTimes = 0;
+    int hasError = 0;
     char buf[1];
 
     // cout << "waiteData:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
     while (bufSize <= 0) {
         bufSize = preReadData(sockInfo, buf, 1);
-        checkError(sockInfo, bufSize, endTryTimes, hasError);
-
+        checkError(sockInfo, bufSize, hasError);
         if (hasError) {
             return 1;
         }
@@ -653,7 +641,6 @@ ssize_t HttpUtils::readData(SockInfo& sockInfo, char* buf, ssize_t length) {
     } else {
         err = SSL_read(sockInfo.ssl, buf, length);
     }
-    pthread_testcancel();
 
     result = this->getSockErr(sockInfo, err);
 
@@ -698,30 +685,19 @@ ssize_t HttpUtils::writeData(SockInfo& sockInfo, char* buf, ssize_t length) {
     return result;
 }
 
-void HttpUtils::checkError(SockInfo& sockInfo, ssize_t& bufSize, int& endTryTimes, int& hasError) {
-    if (READ_ERROR == bufSize) {
+void HttpUtils::checkError(SockInfo& sockInfo, ssize_t& bufSize, int& hasError) {
+    if (READ_ERROR == bufSize || READ_END == bufSize) {
         hasError = 1;
         return;
-    } else if (READ_AGAIN == bufSize || READ_END == bufSize) {
+    } else if (READ_AGAIN == bufSize) {
         if (!sockInfo.isWebSock) { // 已连接的websocket不需要检测超时
             if (!sockContainer.checkSockTimeout(sockInfo)) {
                 hasError = 1;
                 return;
             }
-            if (READ_END == bufSize && endTryTimes != -1) { // -1代表不受重试次数控制
-                if (endTryTimes > this->endTryTimes) {
-                    hasError = 1;
-                    return;
-                }
-                endTryTimes++;
-            }
         }
         bufSize = 0;
         usleep(this->cpuTime);
-    } else {
-        if (endTryTimes != -1) {
-            endTryTimes = 0;
-        }
     }
 }
 

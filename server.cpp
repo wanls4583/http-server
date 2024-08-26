@@ -579,13 +579,13 @@ int reciveBody(SockInfo& sockInfo) {
     ssize_t chunkSize = -1, numSize = 0;
     char* preBuf = NULL;
     int isChunk = header->transferEncoding && !strcmp(header->transferEncoding, "chunked") ? 1 : 0;
-    int endTryTimes = -1, isEnd = 0, hasError = 0;
+    int isEnd = 0, hasError = 0;
 
     while (!isEnd) {
         dataSize = 0;
         while (!bufSize) {
             bufSize = httpUtils.reciveData(sockInfo);
-            httpUtils.checkError(sockInfo, bufSize, endTryTimes, hasError);
+            httpUtils.checkError(sockInfo, bufSize, hasError);
             if (hasError) {
                 if (preBuf != sockInfo.buf) {
                     free(preBuf);
