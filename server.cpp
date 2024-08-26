@@ -694,16 +694,13 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
     }
     sendTimeToLacal(sockInfo, TIME_REQ_END); // request-end
 
+    httpUtils.waiteData(*sockInfo.remoteSockInfo);
+    sendTimeToLacal(sockInfo, TIME_RES_START); // response-begin
     header = httpUtils.reciveHeader(*sockInfo.remoteSockInfo, hasError); // 读取远程服务器的响应头
     if (hasError) {
         return 0;
     }
 
-    if (header->status != 101) {
-        httpUtils.waiteData(*sockInfo.remoteSockInfo);
-    }
-
-    sendTimeToLacal(sockInfo, TIME_RES_START); // response-begin
     char* data = (char*)calloc(remoteSockInfo.headSize, 1);
     memcpy(data, remoteSockInfo.head, remoteSockInfo.headSize);
     sendRecordToLacal(sockInfo, MSG_RES_HEAD, data, remoteSockInfo.headSize);
