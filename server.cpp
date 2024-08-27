@@ -640,9 +640,9 @@ int reciveBody(SockInfo& sockInfo) {
             }
         }
         dataSize = dataSize ? dataSize : sockInfo.bufSize;
-        sendRecordToLacal(sockInfo, MSG_RES_BODY, sockInfo.buf, dataSize);
+        sendRecordToLacal(sockInfo, sockInfo.localSockInfo ? MSG_RES_BODY : MSG_REQ_BODY, sockInfo.buf, dataSize);
         if (isEnd) {
-            sendRecordToLacal(sockInfo, MSG_RES_BODY_END, NULL, 0);
+            sendRecordToLacal(sockInfo, sockInfo.localSockInfo ? MSG_RES_BODY_END : MSG_REQ_BODY_END, NULL, 0);
         }
 
         ssize_t result = httpUtils.writeData(sockInfo.remoteSockInfo ? *sockInfo.remoteSockInfo : *sockInfo.localSockInfo, sockInfo.buf, dataSize); // 将远程服务器返回的数据发送给客户端
