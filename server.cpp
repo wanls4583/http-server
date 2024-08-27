@@ -254,6 +254,7 @@ void* initClntSock(void* arg) {
                     return NULL;
                 }
             } else {
+                sockInfo.remoteSockInfo->reqId = sockInfo.reqId;
                 sendRecordToLacal(sockInfo, MSG_DNS, sockInfo.remoteSockInfo->ip, strlen(sockInfo.remoteSockInfo->ip));
             }
 
@@ -640,9 +641,17 @@ int reciveBody(SockInfo& sockInfo) {
             }
         }
         dataSize = dataSize ? dataSize : sockInfo.bufSize;
-        sendRecordToLacal(sockInfo, sockInfo.localSockInfo ? MSG_RES_BODY : MSG_REQ_BODY, sockInfo.buf, dataSize);
+        sendRecordToLacal(
+            sockInfo.localSockInfo ? *sockInfo.localSockInfo : sockInfo,
+            sockInfo.localSockInfo ? MSG_RES_BODY : MSG_REQ_BODY,
+            sockInfo.buf, dataSize
+        );
         if (isEnd) {
-            sendRecordToLacal(sockInfo, sockInfo.localSockInfo ? MSG_RES_BODY_END : MSG_REQ_BODY_END, NULL, 0);
+            sendRecordToLacal(
+                sockInfo.localSockInfo ? *sockInfo.localSockInfo : sockInfo,
+                sockInfo.localSockInfo ? MSG_RES_BODY_END : MSG_REQ_BODY_END,
+                NULL, 0
+            );
         }
 
         ssize_t result = httpUtils.writeData(sockInfo.remoteSockInfo ? *sockInfo.remoteSockInfo : *sockInfo.localSockInfo, sockInfo.buf, dataSize); // 将远程服务器返回的数据发送给客户端
