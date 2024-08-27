@@ -594,14 +594,7 @@ int reciveBody(SockInfo& sockInfo) {
                 return 0;
             }
         }
-        if (header->contentLenth > 0) {
-            if (header->contentLenth <= sockInfo.bufSize + bodySize) {
-                dataSize = header->contentLenth - bodySize;
-                isEnd = true;
-            } else {
-                bodySize += sockInfo.bufSize;
-            }
-        } else if (isChunk) {
+        if (isChunk) {
             chunkSize = chunkSize == -1 ? getChunkSize(sockInfo, numSize) : chunkSize;
             if (chunkSize == -2) { // 数据错误
                 return 0;
@@ -620,6 +613,13 @@ int reciveBody(SockInfo& sockInfo) {
                 dataSize = chunkSize + 2 + numSize - bodySize;
                 chunkSize = -1;
                 bodySize = 0;
+            } else {
+                bodySize += sockInfo.bufSize;
+            }
+        } else if (header->contentLenth > 0) {
+            if (header->contentLenth <= sockInfo.bufSize + bodySize) {
+                dataSize = header->contentLenth - bodySize;
+                isEnd = true;
             } else {
                 bodySize += sockInfo.bufSize;
             }
@@ -734,7 +734,12 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
     }
 
     boundary = httpUtils.getBoundary(header);
-    if (strcmp(sockInfo.header->method, "HEAD") != 0 && (header->contentLenth || boundary.size())) { // HEAD请求没有响应体，即使有，也应该丢弃
+    if (strcmp(sockInfo.header->method, "HEAD") != 0 // HEAD请求没有响应体，即使有，也应该丢弃
+        && !(header->status >= 100 && header->status <= 199)
+        && header->status != 204
+        && header->status != 205
+        && header->status != 304
+        && (header->contentLenth != 0 || boundary.size())) {
         if (!reciveBody(*sockInfo.remoteSockInfo)) { // 读取和转发服务端响应体
             return 0;
         }
