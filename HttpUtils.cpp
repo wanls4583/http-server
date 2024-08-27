@@ -233,6 +233,106 @@ void HttpUtils::setHeaderKeyValue(HttpHeader* header, string head) {
     }
 }
 
+char* HttpUtils::replaceHeaderKeyVal(char* header, char* hkey, char* hval) {
+    string head = string(header);
+    ssize_t pos = head.npos, index = 0;
+    string line = "", key = "", val = "";
+    char* result = NULL;
+    char* tmp = NULL;
+    char* hkey_lw = to_lower(copyBuf(hkey));
+    int colonSize = 0;
+
+    while ((pos = head.find("\r\n")) != head.npos) {
+        line = head.substr(0, pos);
+        head = head.substr(pos + 2);
+        ssize_t colon = line.find(":");
+        if (colon == head.npos) {
+            break;
+        }
+        colonSize = line[colon + 1] == ' ' ? 2 : 1;
+        key = line.substr(0, colon);
+        key = to_lower(key);
+        val = line.substr(colon + colonSize);
+        if (key.compare(hkey_lw) == 0) {
+            ssize_t k_len = strlen(hkey), v_len = strlen(hval);
+            result = (char*)calloc(index + k_len + 2 + v_len + 2 + head.size() + 1, 1);
+            tmp = result;
+            memcpy(tmp, header, index);
+            tmp += index;
+            memcpy(tmp, hkey, k_len);
+            tmp += k_len;
+            tmp[0] = ':';
+            tmp[1] = ' ';
+            tmp += 2;
+            memcpy(tmp, hval, v_len);
+            tmp += v_len;
+            tmp[0] = '\r';
+            tmp[1] = '\n';
+            tmp += 2;
+            memcpy(tmp, head.c_str(), head.size());
+            break;
+        }
+        index += pos + 2;
+    }
+    free(hkey_lw);
+
+    return result;
+}
+
+char* HttpUtils::addHeaderKeyVal(char* header, char* hkey, char* hval) {
+    ssize_t k_len = strlen(hkey), v_len = strlen(hval), buf_len = strlen(header);
+    char* result = (char*)calloc(buf_len + k_len + 2 + v_len + 3, 1);
+    char* tmp = result;
+
+    memcpy(tmp, header, buf_len - 2);
+    tmp += buf_len - 2; // 尾部有空行\r\n
+    memcpy(tmp, hkey, k_len);
+    tmp += k_len;
+    tmp[0] = ':';
+    tmp[1] = ' ';
+    tmp += 2;
+    memcpy(tmp, hval, v_len);
+    tmp += v_len;
+    tmp[0] = '\r';
+    tmp[1] = '\n';
+    tmp[2] = '\r';
+    tmp[3] = '\n';
+
+    return result;
+}
+
+char* HttpUtils::delHeaderKeyVal(char* header, char* hkey) {
+    string head = string(header);
+    ssize_t pos = head.npos, index = 0;
+    string line = "", key = "", val = "";
+    char* result = NULL;
+    char* hkey_lw = to_lower(copyBuf(hkey));
+    int colonSize = 0;
+
+    while ((pos = head.find("\r\n")) != head.npos) {
+        line = head.substr(0, pos);
+        head = head.substr(pos + 2);
+        ssize_t colon = line.find(":");
+        if (colon == head.npos) {
+            break;
+        }
+        colonSize = line[colon + 1] == ' ' ? 2 : 1;
+        key = line.substr(0, colon);
+        key = to_lower(key);
+        val = line.substr(colon + colonSize);
+        if (key.compare(hkey_lw) == 0) {
+            result = (char*)calloc(index + head.size() + 1, 1);
+            memcpy(result, header, index);
+            memcpy(result + index, head.c_str(), head.size());
+            break;
+        }
+        index += pos + 2;
+    }
+    free(hkey_lw);
+
+    return result;
+}
+
 char* HttpUtils::getSecWebSocketAccept(SockInfo& sockInfo) {
     char* result = NULL;
     if (sockInfo.header->secWebSocketKey) {
@@ -853,15 +953,22 @@ void HttpUtils::createReqData(SockInfo& sockInfo, char*& req, ssize_t& reqSize) 
     string head = sockInfo.head;
     HttpHeader* header = sockInfo.header;
     int pos = head.find("\r\n");
+    // char* dhead = this->replaceHeaderKeyVal(sockInfo.head + pos + 2, (char*)"accept-encoding", (char*)"br"); // 替换请求头
+    // char* dhead = this->delHeaderKeyVal(sockInfo.head + pos + 2, (char*)"accept-encoding"); // 取消压缩
+    char* dhead = this->addHeaderKeyVal(sockInfo.head + pos + 2, (char*)"lisong", (char*)"haha"); // 新增请求头
+    char* buf = dhead ? dhead : sockInfo.head + pos + 2;
 
     firstLine += header->method;
     firstLine += " ";
     firstLine += header->path;
     firstLine += " ";
     firstLine += header->protocol;
+    firstLine += "\r\n";
 
-    reqSize = firstLine.size() + sockInfo.headSize - pos + sockInfo.bodySize;
+    reqSize = firstLine.size() + strlen(dhead);
     req = (char*)calloc(reqSize + 1, 1);
     memcpy(req, firstLine.c_str(), firstLine.size());
-    memcpy(req + firstLine.size(), sockInfo.head + pos, sockInfo.headSize - pos);
+    memcpy(req + firstLine.size(), buf, strlen(buf));
+
+    free(dhead);
 }

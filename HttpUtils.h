@@ -17,35 +17,38 @@ class HttpUtils {
 private:
     int cpuTime;
     int endTryTimes;
-    void setHeaderKeyValue(HttpHeader* header, string head);
     HttpHeader* getHttpReqHeader(SockInfo& sockInfo);
     HttpHeader* getHttpResHeader(SockInfo& sockInfo);
+    void setHeaderKeyValue(HttpHeader* header, string head);
     ssize_t preReadData(SockInfo& sockInfo, char* buf, ssize_t length);
     ssize_t readData(SockInfo& sockInfo, char* buf, ssize_t length);
     ssize_t getSockErr(SockInfo& sockInfo, ssize_t err);
 public:
     HttpUtils();
     ~HttpUtils();
+    int checkMethod(const char* method);
+    char* replaceHeaderKeyVal(char* header, char* prop, char* val);
+    char* addHeaderKeyVal(char* header, char* hkey, char* hval);
+    char* delHeaderKeyVal(char* header, char* hkey);
     char* getSecWebSocketAccept(SockInfo& sockInfo);
     string getBoundary(HttpHeader* header);
-    void checkError(SockInfo& sockInfo, ssize_t& bufSize, int& hasError);
-    int checkMethod(const char* method);
+    void preReciveHeader(SockInfo& sockInfo, int& hasError);
+    HttpHeader* reciveHeader(SockInfo& sockInfo, int& hasError);
     void reciveBody(SockInfo& sockInfo, int& hasError);
     WsFragment* reciveWsFragment(SockInfo& sockInfo, int& hasError);
     void reciveSocksReqHeader(SockInfo& sockInfo, int& hasError);
-    void preReciveHeader(SockInfo& sockInfo, int& hasError);
-    void createReqData(SockInfo& sockInfo, char*& req, ssize_t& reqSize);
-    HttpHeader* reciveHeader(SockInfo& sockInfo, int& hasError);
     ssize_t waiteData(SockInfo& sockInfo);
     ssize_t reciveData(SockInfo& sockInfo);
     ssize_t freeData(SockInfo& sockInfo);
     ssize_t writeData(SockInfo& sockInfo, char* buf, ssize_t length);
+    void checkError(SockInfo& sockInfo, ssize_t& bufSize, int& hasError);
     ssize_t sendTunnelOk(SockInfo& sockInfo);
     ssize_t sendUpgradeOk(SockInfo& sockInfo);
     ssize_t sendSocksOk(SockInfo& sockInfo);
     ssize_t sendSocksRes(SockInfo& sockInfo);
-    ssize_t send404(SockInfo& sockInfo);
     int sendFile(SockInfo& sockInfo);
+    ssize_t send404(SockInfo& sockInfo);
     string getType(string fName);
+    void createReqData(SockInfo& sockInfo, char*& req, ssize_t& reqSize);
 };
 #endif
