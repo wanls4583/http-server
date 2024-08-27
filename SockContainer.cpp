@@ -35,6 +35,10 @@ void SockContainer::freeHeader(HttpHeader* header) {
     free(header->acceptLanguage);
     free(header->transferEncoding);
     free(header->trailer);
+    free(header->upgrade);
+    free(header->secWebSocketKey);
+    free(header->upgradeInsecureRequests);
+    free(header->authorization);
     free(header->reason);
     free(header);
 }

@@ -229,6 +229,12 @@ void HttpUtils::setHeaderKeyValue(HttpHeader* header, string head) {
         } else if (prop.compare("sec-websocket-key") == 0) {
             header->secWebSocketKey = new char[val.size() + 1];
             strcpy(header->secWebSocketKey, val.c_str());
+        } else if (prop.compare("upgrade-insecure-requests") == 0) {
+            header->upgradeInsecureRequests = new char[val.size() + 1];
+            strcpy(header->upgradeInsecureRequests, val.c_str());
+        } else if (prop.compare("authorization") == 0) {
+            header->authorization = new char[val.size() + 1];
+            strcpy(header->authorization, val.c_str());
         }
     }
 }

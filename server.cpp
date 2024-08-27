@@ -268,7 +268,7 @@ void* initClntSock(void* arg) {
                 return NULL;
             }
 
-            if (!sockInfo.remoteSockInfo->header->connnection ||
+            if (!(sockInfo.header->upgradeInsecureRequests || sockInfo.header->authorization) || // 对于需要验证密码的请求，客户端验证后会带上Authorization请求头
                 sockInfo.remoteSockInfo->header->connnection && strcmp(sockInfo.remoteSockInfo->header->connnection, "close") == 0) { // 远程服务器非长连接
                 sockContainer.shutdownSock();
                 return NULL;

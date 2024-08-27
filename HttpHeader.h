@@ -24,6 +24,8 @@ typedef struct HttpHeader
     char *reason;
     char *upgrade;
     char *secWebSocketKey;
+    char *upgradeInsecureRequests;
+    char *authorization;
     ssize_t contentLenth;
     int port;
     int status;
