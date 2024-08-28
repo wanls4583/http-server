@@ -596,6 +596,11 @@ int reciveBody(SockInfo& sockInfo) {
                 if (preBuf != sockInfo.buf) {
                     free(preBuf);
                 }
+                sendRecordToLacal(
+                    sockInfo.localSockInfo ? *sockInfo.localSockInfo : sockInfo,
+                    sockInfo.localSockInfo ? MSG_RES_BODY_END : MSG_REQ_BODY_END,
+                    NULL, 0
+                );
                 return 0;
             }
         }
