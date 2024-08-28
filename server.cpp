@@ -30,7 +30,8 @@ TlsUtils tlsUtil;
 HttpUtils httpUtils;
 WsUtils wsUtils;
 pthread_key_t ptKey;
-pthread_mutex_t serverMutex;
+pthread_mutex_t pemMutex;
+pthread_mutex_t sendRecordMutex;
 
 int initServSock();
 void* initClntSock(void* arg);
@@ -49,7 +50,8 @@ int main() {
     setProxyPort();
     addRootCert();
     signal(SIGPIPE, SIG_IGN); // 屏蔽SIGPIPE信号，防止进程退出
-    pthread_mutex_init(&serverMutex, NULL);
+    pthread_mutex_init(&pemMutex, NULL);
+    pthread_mutex_init(&sendRecordMutex, NULL);
     pthread_key_create(&ptKey, NULL);
     servSock = initServSock();
     if (servSock < 0) {
@@ -395,7 +397,7 @@ int initRemoteSock(SockInfo& sockInfo) {
             char* buf = NULL;
             X509* x509 = SSL_get_peer_certificate(ssl);
 
-            pthread_mutex_lock(&serverMutex);
+            pthread_mutex_lock(&pemMutex);
             FILE* pemFile = fopen("./tmp.pem", "w+");
             PEM_write_X509(pemFile, x509);
 
@@ -405,7 +407,7 @@ int initRemoteSock(SockInfo& sockInfo) {
             fseek(pemFile, 0, SEEK_SET);
             fread(buf, size, 1, pemFile);
             fclose(pemFile);
-            pthread_mutex_unlock(&serverMutex);
+            pthread_mutex_unlock(&pemMutex);
 
             sockInfo.remoteSockInfo->pem_cert = buf;
             // 获取服务器证书--end
@@ -543,7 +545,10 @@ void sendRecordToLacal(SockInfo& sockInfo, int type, char* data, ssize_t size) {
         memcpy(msg + index, data, size);
     }
 
+    pthread_mutex_lock(&sendRecordMutex);
     wsUtils.sendMsg(*sockContainer.wsScokInfo, msg, bufSize, 1, 2);
+    pthread_mutex_unlock(&sendRecordMutex);
+
     free(msg);
 }
 
