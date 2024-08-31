@@ -77,7 +77,7 @@ u64 sha384_initial_hash[] = {
     0xa44ffabe1d48b547
 };
 
-static const int sha1_k[] = {
+static const u32 sha1_k[] = {
     0x5a827999, // 0 <= t <= 19
     0x6ed9eba1, // 20 <= t <= 39
     0x8f1bbcdc, // 40 <= t <= 59

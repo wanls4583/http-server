@@ -9,6 +9,11 @@
                 "-fansi-escape-codes",
                 "-L/opt/homebrew/opt/openssl@1.1/lib",
                 "-I/opt/homebrew/opt/openssl@1.1/include",
+                "-I/opt/homebrew/opt/v8@11.7/libexec/include",
+                "-L/opt/homebrew/opt/v8@11.7/lib",
+                "-lv8",
+                "-lv8_libbase",
+                "-lv8_libplatform",
                 "-g",
                 // "${file}", //当前活动的文件
                 "${fileDirname}/*.cpp",
@@ -16,7 +21,10 @@
                 "-o",
                 "${fileDirname}/build/${fileBasenameNoExtension}",
                 "-lssl",
-                "-lcrypto"
+                "-lcrypto",
+                "-std=c++17",
+                "-DV8_COMPRESS_POINTERS",
+                "-DV8_ENABLE_SANDBOX"
             ],
             "options": {
                 "cwd": "${fileDirname}"
@@ -35,13 +43,21 @@
                 "-fdiagnostics-color=always",
                 "-L/opt/homebrew/opt/openssl@1.1/lib",
                 "-I/opt/homebrew/opt/openssl@1.1/include",
+                "-I/opt/homebrew/opt/v8@11.7/include",
+                "-L/opt/homebrew/opt/v8@11.7/lib",
+                "-lv8",
+                "-lv8_libbase",
+                "-lv8_libplatform",
                 "-g",
                 // "${file}", //当前活动的文件
                 "${fileDirname}/*.cpp",
                 "-o",
                 "${fileDirname}/build/${fileBasenameNoExtension}",
                 "-lssl",
-                "-lcrypto"
+                "-lcrypto",
+                "-std=c++17",
+                "-DV8_COMPRESS_POINTERS",
+                "-DV8_ENABLE_SANDBOX"
             ],
             "options": {
                 "cwd": "${fileDirname}"

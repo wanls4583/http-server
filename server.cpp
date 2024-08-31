@@ -13,6 +13,7 @@
 #include "utils.h"
 #include "TlsUtils.h"
 #include "HttpUtils.h"
+#include "V8Utils.h"
 #include "SockContainer.h"
 
 using namespace std;
@@ -29,11 +30,14 @@ SockContainer sockContainer;
 TlsUtils tlsUtil;
 HttpUtils httpUtils;
 WsUtils wsUtils;
+pthread_t v8Tid;
 pthread_key_t ptKey;
 pthread_mutex_t pemMutex;
 pthread_mutex_t sendRecordMutex;
+char* scriptScource = NULL;
 
 int initServSock();
+void* initV8Loop(void* arg);
 void* initClntSock(void* arg);
 int initRemoteSock(SockInfo& sockInfo);
 ssize_t getChunkSize(SockInfo& sockInfo, ssize_t& numSize);
@@ -57,6 +61,9 @@ int main() {
     if (servSock < 0) {
         return -1;
     }
+
+    pthread_create(&v8Tid, NULL, initV8Loop, NULL);
+    pthread_detach(v8Tid);
 
     while (1) {
         struct sockaddr_in clntAddr;
@@ -115,6 +122,12 @@ int initServSock() {
     }
 
     return servSock;
+}
+
+void* initV8Loop(void* arg) {
+    V8Utils v8Utils;
+    v8Utils.initEventLoop();
+    return NULL;
 }
 
 void* initClntSock(void* arg) {
