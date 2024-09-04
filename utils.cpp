@@ -43,7 +43,7 @@ string to_upper(string s) {
     return s;
 }
 
-int split(char**& strs, const string& s, const char delim = ' ') {
+int split(const string& s, char**& strs, const char delim = ' ') {
     vector<string> sv;
     istringstream iss(s);
     string temp;
@@ -66,6 +66,20 @@ int split(char**& strs, const string& s, const char delim = ' ') {
     }
 
     return size;
+}
+
+char* jsU8ArrayToChar(char* arr) {
+    char** str;
+    char* result;
+
+    size_t size = split(arr, str, ',');
+    result = (char*)calloc(size, 1);
+
+    for (int i = 0; i < size; i++) {
+        result[i] = atoi(str[i]);
+    }
+
+    return result;
 }
 
 int* getLink(const char* p, ssize_t pSize) {

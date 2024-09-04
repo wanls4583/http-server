@@ -1,4 +1,5 @@
 #include "V8Utils.h"
+#include "utils.h"
 #include <iostream>
 #include <unistd.h>
 
@@ -51,6 +52,9 @@ void V8Utils::initEventLoop() {
             if (!foo_ret.IsEmpty()) {
               v8::String::Utf8Value utf8Value(isolate, foo_ret.ToLocalChecked());
               std::cout << "result: " << *utf8Value << std::endl;
+              char* str = jsU8ArrayToChar(*utf8Value);
+              cout << str << endl;
+              return;
             }
           }
           usleep(1000);

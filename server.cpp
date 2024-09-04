@@ -126,6 +126,7 @@ int initServSock() {
 
 void* initV8Loop(void* arg) {
     V8Utils v8Utils;
+    scriptScource = (char*)"function run(){return '1,2,3,127,128,129,255'}";
     v8Utils.initEventLoop();
     return NULL;
 }

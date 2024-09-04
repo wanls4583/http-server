@@ -184,7 +184,7 @@ void HttpUtils::setHeaderKeyValue(HttpHeader* header, string head) {
             string type = val;
             string boundary = " boundary=";
             char** strs = NULL;
-            int len = split(strs, val, ';');
+            int len = split(val, strs, ';');
             header->contentType = strs[0];
             for (int i = 1; i < len; i++) {
                 string s = strs[i];
