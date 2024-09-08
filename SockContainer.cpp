@@ -103,6 +103,8 @@ void SockContainer::_resetSockInfo(SockInfo& sockInfo) {
     sockInfo.cipher = NULL;
     free(sockInfo.pem_cert);
     sockInfo.pem_cert = NULL;
+    free(sockInfo.ruleBuf);
+    sockInfo.ruleBuf = NULL;
 
     sockInfo.tv.tv_sec = 0;
     sockInfo.tv.tv_nsec = 0;
@@ -148,6 +150,8 @@ void SockContainer::resetSockInfoData(SockInfo& sockInfo) {
 void SockContainer::initSockInfos() {
     for (int i = 0; i < MAX_SOCK; i++) {
         this->resetSockInfo(this->sockInfos[i]);
+        pthread_mutex_init(&this->sockInfos[i].mutex, NULL);
+        pthread_cond_init(&this->sockInfos[i].cond, NULL);
     }
 }
 
@@ -159,6 +163,15 @@ SockInfo* SockContainer::getSockInfo() {
         if (this->sockInfos[i].sockId <= 0 && !this->sockInfos[i].state) {
             timespec_get(&(this->sockInfos[i].tv), TIME_UTC);
             this->sockInfos[i].sock = 0;
+            return &this->sockInfos[i];
+        }
+    }
+    return NULL;
+}
+
+SockInfo* SockContainer::getSockInfoByReqId(u_int64_t reqId) {
+    for (int i = 0; i < MAX_SOCK; i++) {
+        if (!this->sockInfos[i].state && this->sockInfos[i].reqId == reqId) {
             return &this->sockInfos[i];
         }
     }

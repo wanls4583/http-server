@@ -42,6 +42,8 @@ public:
     ssize_t freeData(SockInfo& sockInfo);
     ssize_t writeData(SockInfo& sockInfo, char* buf, ssize_t length);
     void checkError(SockInfo& sockInfo, ssize_t& bufSize, int& hasError);
+    bool checkIfWebScoket(HttpHeader* header);
+    bool checkIfResponsBody(HttpHeader* header, char* method);
     ssize_t sendTunnelOk(SockInfo& sockInfo);
     ssize_t sendUpgradeOk(SockInfo& sockInfo);
     ssize_t sendSocksOk(SockInfo& sockInfo);

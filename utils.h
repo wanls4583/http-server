@@ -24,5 +24,6 @@ char* sliceBuf(const char* str, ssize_t start, ssize_t end);
 char* runCmd(const char* strCmd);
 char* readFile(ifstream& inFile, ssize_t& len);
 char* findPidByPort(int port);
+bool wildcardMatch(char* s, char* p);
 
 #endif

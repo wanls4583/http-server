@@ -14,6 +14,8 @@ typedef struct SockInfo {
     SSL* ssl;
     SockInfo* remoteSockInfo;
     SockInfo* localSockInfo;
+    pthread_cond_t cond;
+    pthread_mutex_t mutex;
 
     u_int64_t reqId;
     u_int64_t sockId;
@@ -39,6 +41,7 @@ typedef struct SockInfo {
     char* head;
     char* body;
     char* buf; // 未处理的buf
+    char* ruleBuf; // 被修改的bug
     char* cipher;
     char* pem_cert;
     WsFragment* wsFragment;

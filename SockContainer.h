@@ -32,6 +32,7 @@ public:
     void resetSockInfoData(SockInfo& sockInfo);
     void initSockInfos();
     SockInfo* getSockInfo();
+    SockInfo* getSockInfoByReqId(u_int64_t reqId);
     void shutdownSock(SockInfo* sockInfo = NULL);
     void closeSock(SockInfo& sockInfo);
     int checkSockTimeout(SockInfo& sockInfo);

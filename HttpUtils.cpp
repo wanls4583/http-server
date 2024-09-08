@@ -848,6 +848,25 @@ ssize_t HttpUtils::getSockErr(SockInfo& sockInfo, ssize_t err) {
     return result;
 }
 
+bool HttpUtils::checkIfWebScoket(HttpHeader* header) {
+    return header && header->status == 101 && header->upgrade && strcmp(header->upgrade, "websocket") == 0;
+}
+
+bool HttpUtils::checkIfResponsBody(HttpHeader* header, char* method) {
+    string boundary = this->getBoundary(header);
+
+    if (strcmp(method, "HEAD") != 0 // HEAD请求没有响应体，即使有，也应该丢弃
+        && !(header->status >= 100 && header->status <= 199)
+        && header->status != 204
+        && header->status != 205
+        && header->status != 304
+        && (header->contentLenth != 0 || boundary.size())) {
+        return true;
+    }
+
+    return false;
+}
+
 ssize_t HttpUtils::sendTunnelOk(SockInfo& sockInfo) {
     string s = "HTTP/1.1 200 Connection Established\r\n\r\n";
     return this->writeData(sockInfo, (char*)s.c_str(), s.length());

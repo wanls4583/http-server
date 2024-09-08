@@ -15,10 +15,11 @@
 #include "HttpUtils.h"
 #include "V8Utils.h"
 #include "SockContainer.h"
+#include "RuleUtils.h"
 
 using namespace std;
 
-enum { MSG_REQ_HEAD = 1, MSG_REQ_BODY, MSG_REQ_BODY_END, MSG_RES_HEAD, MSG_RES_BODY, MSG_RES_BODY_END, MSG_DNS, MSG_STATUS, MSG_TIME, MSG_CIPHER, MSG_CERT, MSG_PORT };
+enum { MSG_REQ_HEAD = 1, MSG_REQ_BODY, MSG_REQ_BODY_END, MSG_RES_HEAD, MSG_RES_BODY, MSG_RES_BODY_END, MSG_DNS, MSG_STATUS, MSG_TIME, MSG_CIPHER, MSG_CERT, MSG_PORT, MSG_RULE };
 enum { STATUS_FAIL_CONNECT = 1, STATUS_FAIL_SSL_CONNECT };
 enum { TIME_DNS_START = 1, TIME_DNS_END, TIME_CONNECT_START, TIME_CONNECT_END, TIME_CONNECT_SSL_START, TIME_CONNECT_SSL_END, TIME_REQ_START, TIME_REQ_END, TIME_RES_START, TIME_RES_END };
 
@@ -33,6 +34,7 @@ WsUtils wsUtils;
 pthread_key_t ptKey;
 pthread_mutex_t pemMutex;
 pthread_mutex_t sendRecordMutex;
+RuleUtils ruleUtils;
 char* scriptScource = NULL;
 
 int initServSock();
@@ -40,7 +42,8 @@ void* initV8Loop(void* arg);
 void* initClntSock(void* arg);
 int initRemoteSock(SockInfo& sockInfo);
 ssize_t getChunkSize(SockInfo& sockInfo, ssize_t& numSize);
-int reciveBody(SockInfo& sockInfo);
+int reciveBody(SockInfo& sockInfo, bool ifWrite);
+int checkRule(SockInfo& sockInfo);
 int forward(SockInfo& sockInfo);
 void* forwardWebocket(void* arg);
 int initLocalWebscoket(SockInfo& sockInfo, int type);
@@ -221,6 +224,14 @@ void* initClntSock(void* arg) {
         sockInfo.isNoCheckSSL = 0; // CONNECT请求使用的是http协议，用来为https的代理建立连接，下一次请求才是真正的tls握手请求
         initClntSock(arg);
     } else if (httpUtils.checkMethod(sockInfo.header->method)) {
+        int checkReulst = checkRule(sockInfo);
+        if (checkReulst == 1) {
+            initClntSock(arg);
+            return NULL;
+        } else if (checkReulst == 0) {
+            sockContainer.shutdownSock();
+            return NULL;
+        }
         if (sockInfo.header->port == proxyPort) { // 本地访问代理设置页面
             // wbscoket升级请求，ws/wss：
             // "GET / HTTP/1.1r\n
@@ -261,7 +272,6 @@ void* initClntSock(void* arg) {
 
             if (!sockInfo.remoteSockInfo) { // 新建远程连接
                 if (!initRemoteSock(sockInfo)) {
-                    usleep(1000 * 500); // 留出时间供客户端根据端口查询进程
                     sockContainer.shutdownSock();
                     return NULL;
                 }
@@ -464,6 +474,7 @@ int initLocalWebscoket(SockInfo& sockInfo, int type) {
                 break;
             }
             if (wsUtils.fragmentComplete(sockInfo.wsFragment)) { // 消息接收完整
+                u_int64_t msgLen = wsUtils.getMsgLength(sockInfo.wsFragment);
                 char* msg = (char*)wsUtils.getMsg(sockInfo.wsFragment);
                 cout << "ws:" << msg << endl;
                 wsUtils.freeFragment(sockInfo.wsFragment);
@@ -472,7 +483,15 @@ int initLocalWebscoket(SockInfo& sockInfo, int type) {
                     result = wsUtils.sendMsg(sockInfo, (unsigned char*)"start", 5);
                 } else if (strcmp(msg, "ping") == 0) {
                     result = wsUtils.sendMsg(sockInfo, (unsigned char*)"pong", 4);
+                } else if (strncmp(msg, "rule:", 5)) {
+                    char msg[1];
+                    ruleUtils.parseRule(msg + 5, msgLen - 5);
+                    msg[0] = ruleUtils.reciveId;
+                    sendRecordToLacal(sockInfo, sockContainer.ruleScokInfo, MSG_RULE, msg, 1);
+                } else if (strncmp(msg, "data:", 5)) {
+                    ruleUtils.reciveData(msg + 5, msgLen - 5);
                 }
+                free(msg);
                 if (READ_ERROR == result) {
                     sockContainer.shutdownSock(&sockInfo);
                     break;
@@ -593,7 +612,7 @@ ssize_t getChunkSize(SockInfo& sockInfo, ssize_t& numSize) {
     return stol(num, NULL, 16);
 }
 
-int reciveBody(SockInfo& sockInfo) {
+int reciveBody(SockInfo& sockInfo, bool ifWrite = true) {
     HttpHeader* header = sockInfo.header;
     string boundary = httpUtils.getBoundary(header);
     ssize_t bufSize = sockInfo.bufSize;
@@ -614,12 +633,14 @@ int reciveBody(SockInfo& sockInfo) {
                 if (preBuf != sockInfo.buf) {
                     free(preBuf);
                 }
-                sendRecordToLacal(
-                    sockInfo.localSockInfo ? *sockInfo.localSockInfo : sockInfo,
-                    sockContainer.proxyScokInfo,
-                    sockInfo.localSockInfo ? MSG_RES_BODY_END : MSG_REQ_BODY_END,
-                    NULL, 0
-                );
+                if (ifWrite) {
+                    sendRecordToLacal(
+                        sockInfo.localSockInfo ? *sockInfo.localSockInfo : sockInfo,
+                        sockContainer.proxyScokInfo,
+                        sockInfo.localSockInfo ? MSG_RES_BODY_END : MSG_REQ_BODY_END,
+                        NULL, 0
+                    );
+                }
                 return 0;
             }
         }
@@ -670,24 +691,32 @@ int reciveBody(SockInfo& sockInfo) {
             }
         }
         dataSize = dataSize ? dataSize : sockInfo.bufSize;
-        sendRecordToLacal(
-            sockInfo.localSockInfo ? *sockInfo.localSockInfo : sockInfo,
-            sockContainer.proxyScokInfo,
-            sockInfo.localSockInfo ? MSG_RES_BODY : MSG_REQ_BODY,
-            sockInfo.buf, dataSize
-        );
-        if (isEnd) {
+
+        if (ifWrite) {
             sendRecordToLacal(
                 sockInfo.localSockInfo ? *sockInfo.localSockInfo : sockInfo,
                 sockContainer.proxyScokInfo,
-                sockInfo.localSockInfo ? MSG_RES_BODY_END : MSG_REQ_BODY_END,
-                NULL, 0
+                sockInfo.localSockInfo ? MSG_RES_BODY : MSG_REQ_BODY,
+                sockInfo.buf, dataSize
             );
-        }
-
-        ssize_t result = httpUtils.writeData(sockInfo.remoteSockInfo ? *sockInfo.remoteSockInfo : *sockInfo.localSockInfo, sockInfo.buf, dataSize); // 将远程服务器返回的数据发送给客户端
-        if (READ_ERROR == result || READ_END == result) {
-            return 0;
+            if (isEnd) {
+                sendRecordToLacal(
+                    sockInfo.localSockInfo ? *sockInfo.localSockInfo : sockInfo,
+                    sockContainer.proxyScokInfo,
+                    sockInfo.localSockInfo ? MSG_RES_BODY_END : MSG_REQ_BODY_END,
+                    NULL, 0
+                );
+            }
+            ssize_t result = httpUtils.writeData(sockInfo.remoteSockInfo ? *sockInfo.remoteSockInfo : *sockInfo.localSockInfo, sockInfo.buf, dataSize); // 将远程服务器返回的数据发送给客户端
+            if (READ_ERROR == result || READ_END == result) {
+                return 0;
+            }
+        } else {
+            if (!ifWrite) {
+                sockInfo.body = (char*)realloc(sockInfo.body, sockInfo.bodySize + dataSize + 1);
+                sockInfo.body[sockInfo.bodySize + dataSize] = 0;
+                memcpy(sockInfo.body + sockInfo.bodySize, sockInfo.buf, dataSize);
+            }
         }
 
         if (sockInfo.bufSize > dataSize) {
@@ -708,6 +737,55 @@ int reciveBody(SockInfo& sockInfo) {
     }
 
     return 1;
+}
+
+int checkRule(SockInfo& sockInfo) {
+    int hasError = 0;
+    int flag = 0;
+    RuleNode* ruleNode = ruleUtils.findRule(&sockInfo);
+
+    if (ruleNode) {
+        if (sockInfo.localSockInfo) {
+            flag = ruleNode->reqFlag;
+        } else {
+            flag = ruleNode->reqFlag;
+        }
+    }
+
+    if (ruleNode && flag) {
+        char* buf = NULL;
+        bool hasBody = false;
+        if (sockInfo.localSockInfo) {
+            HttpHeader* header = httpUtils.reciveHeader(sockInfo, hasError); // 读取服务器请求头
+            hasBody = httpUtils.checkIfResponsBody(header, sockInfo.localSockInfo->header->method);
+        } else {
+            string boundary = httpUtils.getBoundary(sockInfo.header);
+            hasBody = sockInfo.header->contentLenth > 0 || boundary.size() > 0;
+        }
+        if (flag == 2 && hasBody) {
+            if (!reciveBody(sockInfo, false)) { // 读取实体
+                return 0;
+            }
+            buf = (char*)calloc(sockInfo.headSize + sockInfo.bodySize, 1);
+            memcpy(buf, sockInfo.head, sockInfo.headSize);
+            memcpy(buf + sockInfo.headSize, sockInfo.body, sockInfo.bodySize);
+            sendRecordToLacal(sockInfo.localSockInfo ? *sockInfo.localSockInfo : sockInfo, sockContainer.ruleScokInfo, MSG_RES_BODY, buf, sockInfo.headSize + sockInfo.bodySize);
+        } else {
+            buf = (char*)calloc(sockInfo.headSize, 1);
+            memcpy(buf, sockInfo.head, sockInfo.headSize);
+            sendRecordToLacal(sockInfo.localSockInfo ? *sockInfo.localSockInfo : sockInfo, sockContainer.ruleScokInfo, MSG_RES_HEAD, buf, sockInfo.headSize);
+        }
+
+        pthread_cond_wait(&sockInfo.cond, &sockInfo.mutex);
+
+        sockContainer.resetSockInfoData(sockInfo);
+        sockInfo.buf = sockInfo.ruleBuf; // 处理完的buf
+        free(sockInfo.ruleBuf);
+        sockInfo.ruleBuf = NULL;
+        return 1;
+    }
+
+    return -1;
 }
 
 int forward(SockInfo& sockInfo) { // 转发http/https请求
@@ -736,6 +814,11 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
 
     httpUtils.waiteData(*sockInfo.remoteSockInfo);
     sendTimeToLacal(sockInfo, TIME_RES_START); // response-begin
+
+    if (!checkRule(*sockInfo.remoteSockInfo)) {
+        return 0;
+    }
+
     header = httpUtils.reciveHeader(*sockInfo.remoteSockInfo, hasError); // 读取远程服务器的响应头
     if (hasError) {
         return 0;
@@ -750,7 +833,7 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
         return 0;
     }
 
-    if (header->status == 101 && header->upgrade && strcmp(header->upgrade, "websocket") == 0) { // webscoket连接成功
+    if (httpUtils.checkIfWebScoket(header)) { // webscoket连接成功
         sockInfo.remoteSockInfo->isWebSock = 1;
         sockInfo.isWebSock = 1;
 
@@ -764,13 +847,7 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
         return 0;
     }
 
-    boundary = httpUtils.getBoundary(header);
-    if (strcmp(sockInfo.header->method, "HEAD") != 0 // HEAD请求没有响应体，即使有，也应该丢弃
-        && !(header->status >= 100 && header->status <= 199)
-        && header->status != 204
-        && header->status != 205
-        && header->status != 304
-        && (header->contentLenth != 0 || boundary.size())) {
+    if (httpUtils.checkIfResponsBody(header, sockInfo.header->method)) {
         if (!reciveBody(*sockInfo.remoteSockInfo)) { // 读取和转发服务端响应体
             return 0;
         }
