@@ -63,8 +63,12 @@ void SockContainer::resetSockInfo(SockInfo& sockInfo) {
 void SockContainer::_resetSockInfo(SockInfo& sockInfo) {
     this->resetSockInfoData(sockInfo);
 
-    if (sockContainer.wsScokInfo == &sockInfo) {
-        sockContainer.wsScokInfo = NULL;
+    if (sockContainer.proxyScokInfo == &sockInfo) {
+        sockContainer.proxyScokInfo = NULL;
+    }
+
+    if (sockContainer.ruleScokInfo == &sockInfo) {
+        sockContainer.ruleScokInfo = NULL;
     }
 
     if (sockInfo.ssl) {

@@ -61,8 +61,10 @@ HttpHeader* HttpUtils::getHttpReqHeader(SockInfo& sockInfo) {
                 url = sockInfo.ssl ? "wss://" : "ws://";
             }
             url += header->hostname;
-            url += ":";
-            url += to_string(header->port);
+            if (header->port != 80 && header->port != 443) {
+                url += ":";
+                url += to_string(header->port);
+            }
             url += header->path;
             header->url = new char[url.size() + 1];
             strcpy(header->url, url.c_str());

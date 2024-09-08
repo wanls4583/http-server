@@ -30,7 +30,6 @@ SockContainer sockContainer;
 TlsUtils tlsUtil;
 HttpUtils httpUtils;
 WsUtils wsUtils;
-pthread_t v8Tid;
 pthread_key_t ptKey;
 pthread_mutex_t pemMutex;
 pthread_mutex_t sendRecordMutex;
@@ -44,10 +43,10 @@ ssize_t getChunkSize(SockInfo& sockInfo, ssize_t& numSize);
 int reciveBody(SockInfo& sockInfo);
 int forward(SockInfo& sockInfo);
 void* forwardWebocket(void* arg);
-int initLocalWebscoket(SockInfo& sockInfo);
+int initLocalWebscoket(SockInfo& sockInfo, int type);
 void setProxyPort();
 void addRootCert();
-void sendRecordToLacal(SockInfo& sockInfo, int type, char* data, ssize_t size);
+void sendRecordToLacal(SockInfo& sockInfo, SockInfo* wsSockInfo, int type, char* data, ssize_t size);
 void sendTimeToLacal(SockInfo& sockInfo, int timeType);
 
 int main() {
@@ -61,9 +60,6 @@ int main() {
     if (servSock < 0) {
         return -1;
     }
-
-    pthread_create(&v8Tid, NULL, initV8Loop, NULL);
-    pthread_detach(v8Tid);
 
     while (1) {
         struct sockaddr_in clntAddr;
@@ -124,13 +120,6 @@ int initServSock() {
     return servSock;
 }
 
-void* initV8Loop(void* arg) {
-    V8Utils v8Utils;
-    scriptScource = (char*)"function run(){return '1,2,3,127,128,129,255'}";
-    v8Utils.initEventLoop();
-    return NULL;
-}
-
 void* initClntSock(void* arg) {
     SSL* ssl;
     ssize_t bufSize = 0;
@@ -142,7 +131,7 @@ void* initClntSock(void* arg) {
     // cout << "initClntSock:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
     pthread_setspecific(ptKey, arg);
     sockContainer.setNoBlock(sockInfo, 1); // 设置成非阻塞模式
-    sendRecordToLacal(sockInfo, MSG_PORT, NULL, 0);
+    sendRecordToLacal(sockInfo, sockContainer.proxyScokInfo, MSG_PORT, NULL, 0);
 
     if (!sockInfo.isNoCheckSSL) {
         httpUtils.preReciveHeader(sockInfo, hasError);
@@ -248,8 +237,15 @@ void* initClntSock(void* arg) {
             // r\n"
             if (sockInfo.header->connnection && sockInfo.header->upgrade &&
                 !strcmp(sockInfo.header->connnection, "Upgrade") && !strcmp(sockInfo.header->upgrade, "websocket")) {
-                httpUtils.sendUpgradeOk(sockInfo);
-                initLocalWebscoket(sockInfo);
+                if (!strcmp(sockInfo.header->path, "/proxy")) {
+                    httpUtils.sendUpgradeOk(sockInfo);
+                    initLocalWebscoket(sockInfo, 1);
+                } else if (!strcmp(sockInfo.header->path, "/rule")) {
+                    httpUtils.sendUpgradeOk(sockInfo);
+                    initLocalWebscoket(sockInfo, 2);
+                } else {
+                    sockContainer.shutdownSock();
+                }
                 return NULL;
             } else {
                 httpUtils.sendFile(sockInfo);
@@ -258,9 +254,9 @@ void* initClntSock(void* arg) {
             char* req;
             ssize_t reqSize;
             httpUtils.createReqData(sockInfo, req, reqSize);
-            sendRecordToLacal(sockInfo, MSG_REQ_HEAD, req, reqSize);
+            sendRecordToLacal(sockInfo, sockContainer.proxyScokInfo, MSG_REQ_HEAD, req, reqSize);
             if (sockInfo.cipher) {
-                sendRecordToLacal(sockInfo, MSG_CIPHER, sockInfo.cipher, -1);
+                sendRecordToLacal(sockInfo, sockContainer.proxyScokInfo, MSG_CIPHER, sockInfo.cipher, -1);
             }
 
             if (!sockInfo.remoteSockInfo) { // 新建远程连接
@@ -271,11 +267,11 @@ void* initClntSock(void* arg) {
                 }
             } else {
                 sockInfo.remoteSockInfo->reqId = sockInfo.reqId;
-                sendRecordToLacal(sockInfo, MSG_DNS, sockInfo.remoteSockInfo->ip, strlen(sockInfo.remoteSockInfo->ip));
+                sendRecordToLacal(sockInfo, sockContainer.proxyScokInfo, MSG_DNS, sockInfo.remoteSockInfo->ip, strlen(sockInfo.remoteSockInfo->ip));
             }
 
             if (sockInfo.remoteSockInfo->pem_cert) {
-                sendRecordToLacal(sockInfo, MSG_CERT, sockInfo.remoteSockInfo->pem_cert, -1);
+                sendRecordToLacal(sockInfo, sockContainer.proxyScokInfo, MSG_CERT, sockInfo.remoteSockInfo->pem_cert, -1);
             }
 
             if (!forward(sockInfo)) {
@@ -342,7 +338,7 @@ int initRemoteSock(SockInfo& sockInfo) {
 
     char* ip = (char*)calloc(INET_ADDRSTRLEN, 1);
     inet_ntop(host->h_addrtype, host->h_addr_list[0], ip, INET_ADDRSTRLEN);
-    sendRecordToLacal(sockInfo, MSG_DNS, ip, strlen(ip));
+    sendRecordToLacal(sockInfo, sockContainer.proxyScokInfo, MSG_DNS, ip, strlen(ip));
 
     sendTimeToLacal(sockInfo, TIME_CONNECT_START);
     int retries = 0;
@@ -358,13 +354,13 @@ int initRemoteSock(SockInfo& sockInfo) {
                 retries++;
                 if (retries >= 5000) { // 5秒超时
                     char status = STATUS_FAIL_CONNECT;
-                    sendRecordToLacal(sockInfo, MSG_STATUS, &status, 1);
+                    sendRecordToLacal(sockInfo, sockContainer.proxyScokInfo, MSG_STATUS, &status, 1);
                     // cout << "connect timeout:" << sockInfo.sockId << ":" << sockInfo.sock << ":" << sockInfo.header->hostname << endl;
                     return 0;
                 }
             } else {
                 char status = STATUS_FAIL_CONNECT;
-                sendRecordToLacal(sockInfo, MSG_STATUS, &status, 1);
+                sendRecordToLacal(sockInfo, sockContainer.proxyScokInfo, MSG_STATUS, &status, 1);
                 // cout << "connect fail:" << sockInfo.sockId << ":" << sockInfo.sock << ":" << sockInfo.header->hostname << endl;
                 return 0;
             }
@@ -402,7 +398,7 @@ int initRemoteSock(SockInfo& sockInfo) {
         if (err != 1) {
             int sslErrCode = SSL_get_error(ssl, err);
             char status = STATUS_FAIL_SSL_CONNECT;
-            sendRecordToLacal(sockInfo, MSG_STATUS, &status, 1);
+            sendRecordToLacal(sockInfo, sockContainer.proxyScokInfo, MSG_STATUS, &status, 1);
             cout << "SSL_connect fail:" << sockInfo.sockId << ":" << sockInfo.sock << ":" << sslErrCode << endl;
             return 0;
         } else {
@@ -433,19 +429,29 @@ int initRemoteSock(SockInfo& sockInfo) {
     return 1;
 }
 
-int initLocalWebscoket(SockInfo& sockInfo) {
+int initLocalWebscoket(SockInfo& sockInfo, int type) {
     int hasError = 0;
     ssize_t result = 0;
-    if (sockContainer.wsScokInfo) {
-        if (sockContainer.wsScokInfo->sockId == sockInfo.sockId) {
+    SockInfo* wsScokInfo = NULL;
+    if (type == 1) {
+        wsScokInfo = sockContainer.proxyScokInfo;
+    } else if (type == 2) {
+        wsScokInfo = sockContainer.ruleScokInfo;
+    }
+    if (wsScokInfo) {
+        if (wsScokInfo->sockId == sockInfo.sockId) {
             return 0;
         }
-        wsUtils.close(*sockContainer.wsScokInfo); // 发送关闭祯
+        wsUtils.close(*wsScokInfo); // 发送关闭祯
         usleep(1000); // 等客户端处理完关闭祯在断开连接
-        sockContainer.shutdownSock(sockContainer.wsScokInfo);
+        sockContainer.shutdownSock(wsScokInfo);
     }
-    sockContainer.wsScokInfo = &sockInfo;
-    while (sockContainer.wsScokInfo == &sockInfo) {
+    if (type == 1) {
+        sockContainer.proxyScokInfo = &sockInfo;
+    } else if (type == 2) {
+        sockContainer.ruleScokInfo = &sockInfo;
+    }
+    while (1) {
         WsFragment* wsFragment = httpUtils.reciveWsFragment(sockInfo, hasError);
         if (hasError) {
             sockContainer.shutdownSock(&sockInfo);
@@ -454,7 +460,6 @@ int initLocalWebscoket(SockInfo& sockInfo) {
         if (wsFragment) {
             if (wsFragment->opCode == 0x08) { // 关闭
                 sockContainer.shutdownSock(&sockInfo);
-                sockContainer.wsScokInfo = NULL;
                 cout << "ws:close" << endl;
                 break;
             }
@@ -470,7 +475,6 @@ int initLocalWebscoket(SockInfo& sockInfo) {
                 }
                 if (READ_ERROR == result) {
                     sockContainer.shutdownSock(&sockInfo);
-                    sockContainer.wsScokInfo = NULL;
                     break;
                 }
             }
@@ -481,7 +485,7 @@ int initLocalWebscoket(SockInfo& sockInfo) {
 }
 
 void sendTimeToLacal(SockInfo& sockInfo, int timeType) {
-    if (!sockContainer.wsScokInfo) {
+    if (!sockContainer.proxyScokInfo) {
         return;
     }
     timespec tv;
@@ -494,12 +498,12 @@ void sendTimeToLacal(SockInfo& sockInfo, int timeType) {
     msg[0] = timeType;
     memcpy(msg + 1, &t, sizeof(u_int64_t));
 
-    sendRecordToLacal(sockInfo, MSG_TIME, msg, sizeof(u_int64_t) + 1);
+    sendRecordToLacal(sockInfo, sockContainer.proxyScokInfo, MSG_TIME, msg, sizeof(u_int64_t) + 1);
     free(msg);
 }
 
-void sendRecordToLacal(SockInfo& sockInfo, int type, char* data, ssize_t size) {
-    if (!sockContainer.wsScokInfo) {
+void sendRecordToLacal(SockInfo& sockInfo, SockInfo* wsSockInfo, int type, char* data, ssize_t size) {
+    if (!wsSockInfo) {
         return;
     }
     size = !data ? 0 : size;
@@ -560,7 +564,7 @@ void sendRecordToLacal(SockInfo& sockInfo, int type, char* data, ssize_t size) {
     }
 
     pthread_mutex_lock(&sendRecordMutex);
-    wsUtils.sendMsg(*sockContainer.wsScokInfo, msg, bufSize, 1, 2);
+    wsUtils.sendMsg(*wsSockInfo, msg, bufSize, 1, 2);
     pthread_mutex_unlock(&sendRecordMutex);
 
     free(msg);
@@ -612,6 +616,7 @@ int reciveBody(SockInfo& sockInfo) {
                 }
                 sendRecordToLacal(
                     sockInfo.localSockInfo ? *sockInfo.localSockInfo : sockInfo,
+                    sockContainer.proxyScokInfo,
                     sockInfo.localSockInfo ? MSG_RES_BODY_END : MSG_REQ_BODY_END,
                     NULL, 0
                 );
@@ -667,12 +672,14 @@ int reciveBody(SockInfo& sockInfo) {
         dataSize = dataSize ? dataSize : sockInfo.bufSize;
         sendRecordToLacal(
             sockInfo.localSockInfo ? *sockInfo.localSockInfo : sockInfo,
+            sockContainer.proxyScokInfo,
             sockInfo.localSockInfo ? MSG_RES_BODY : MSG_REQ_BODY,
             sockInfo.buf, dataSize
         );
         if (isEnd) {
             sendRecordToLacal(
                 sockInfo.localSockInfo ? *sockInfo.localSockInfo : sockInfo,
+                sockContainer.proxyScokInfo,
                 sockInfo.localSockInfo ? MSG_RES_BODY_END : MSG_REQ_BODY_END,
                 NULL, 0
             );
@@ -736,7 +743,7 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
 
     char* data = (char*)calloc(remoteSockInfo.headSize, 1);
     memcpy(data, remoteSockInfo.head, remoteSockInfo.headSize);
-    sendRecordToLacal(sockInfo, MSG_RES_HEAD, data, remoteSockInfo.headSize);
+    sendRecordToLacal(sockInfo, sockContainer.proxyScokInfo, MSG_RES_HEAD, data, remoteSockInfo.headSize);
     result = httpUtils.writeData(sockInfo, data, remoteSockInfo.headSize); // 转发服务端响应头
     free(data);
     if (READ_ERROR == result || READ_END == result) {

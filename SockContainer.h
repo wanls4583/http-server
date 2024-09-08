@@ -24,7 +24,8 @@ public:
     u_int64_t sockId; // 每个连接的id（一个连接可能有多个请求）
     SockContainer();
     ~SockContainer();
-    SockInfo* wsScokInfo; // 本地通信
+    SockInfo* proxyScokInfo; // 本地通信
+    SockInfo* ruleScokInfo; // 本地通信
     void freeHeader(HttpHeader* header);
     void freeSocksReqHeader(SocksReqHeader* header);
     void resetSockInfo(SockInfo& sockInfo);
