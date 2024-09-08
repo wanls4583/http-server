@@ -475,6 +475,10 @@ int initLocalWebscoket(SockInfo& sockInfo, int type) {
             }
             if (wsUtils.fragmentComplete(sockInfo.wsFragment)) { // 消息接收完整
                 u_int64_t msgLen = wsUtils.getMsgLength(sockInfo.wsFragment);
+                if (!msgLen) {
+                    continue;
+                }
+
                 char* msg = (char*)wsUtils.getMsg(sockInfo.wsFragment);
                 cout << "ws:" << msg << endl;
                 wsUtils.freeFragment(sockInfo.wsFragment);
@@ -483,12 +487,12 @@ int initLocalWebscoket(SockInfo& sockInfo, int type) {
                     result = wsUtils.sendMsg(sockInfo, (unsigned char*)"start", 5);
                 } else if (strcmp(msg, "ping") == 0) {
                     result = wsUtils.sendMsg(sockInfo, (unsigned char*)"pong", 4);
-                } else if (strncmp(msg, "rule:", 5)) {
-                    char msg[1];
+                } else if (strncmp(msg, "rule:", 5) == 0) {
+                    char data[1];
                     ruleUtils.parseRule(msg + 5, msgLen - 5);
-                    msg[0] = ruleUtils.reciveId;
-                    sendRecordToLacal(sockInfo, sockContainer.ruleScokInfo, MSG_RULE, msg, 1);
-                } else if (strncmp(msg, "data:", 5)) {
+                    data[0] = ruleUtils.reciveId;
+                    sendRecordToLacal(sockInfo, sockContainer.ruleScokInfo, MSG_RULE, data, 1);
+                } else if (strncmp(msg, "data:", 5) == 0) {
                     ruleUtils.reciveData(msg + 5, msgLen - 5);
                 }
                 free(msg);
@@ -744,7 +748,7 @@ int checkRule(SockInfo& sockInfo) {
     int flag = 0;
     RuleNode* ruleNode = ruleUtils.findRule(&sockInfo);
 
-    if (ruleNode) {
+    if (ruleNode && !sockInfo.ruleDone) {
         if (sockInfo.localSockInfo) {
             flag = ruleNode->reqFlag;
         } else {
@@ -769,19 +773,32 @@ int checkRule(SockInfo& sockInfo) {
             buf = (char*)calloc(sockInfo.headSize + sockInfo.bodySize, 1);
             memcpy(buf, sockInfo.head, sockInfo.headSize);
             memcpy(buf + sockInfo.headSize, sockInfo.body, sockInfo.bodySize);
-            sendRecordToLacal(sockInfo.localSockInfo ? *sockInfo.localSockInfo : sockInfo, sockContainer.ruleScokInfo, MSG_RES_BODY, buf, sockInfo.headSize + sockInfo.bodySize);
+            sendRecordToLacal(
+                sockInfo.localSockInfo ? *sockInfo.localSockInfo : sockInfo,
+                sockContainer.ruleScokInfo,
+                sockInfo.localSockInfo ? MSG_RES_BODY : MSG_REQ_BODY,
+                buf, sockInfo.headSize + sockInfo.bodySize
+            );
         } else {
             buf = (char*)calloc(sockInfo.headSize, 1);
             memcpy(buf, sockInfo.head, sockInfo.headSize);
-            sendRecordToLacal(sockInfo.localSockInfo ? *sockInfo.localSockInfo : sockInfo, sockContainer.ruleScokInfo, MSG_RES_HEAD, buf, sockInfo.headSize);
+            sendRecordToLacal(
+                sockInfo.localSockInfo ? *sockInfo.localSockInfo : sockInfo,
+                sockContainer.ruleScokInfo,
+                sockInfo.localSockInfo ? MSG_RES_HEAD : MSG_REQ_HEAD,
+                buf, sockInfo.headSize
+            );
         }
 
         pthread_cond_wait(&sockInfo.cond, &sockInfo.mutex);
 
         sockContainer.resetSockInfoData(sockInfo);
+        free(sockInfo.buf);
         sockInfo.buf = sockInfo.ruleBuf; // 处理完的buf
-        free(sockInfo.ruleBuf);
+        sockInfo.bufSize = sockInfo.ruleBufSize;
         sockInfo.ruleBuf = NULL;
+        sockInfo.ruleBufSize = 0;
+        sockInfo.ruleDone = 1;
         return 1;
     }
 

@@ -94,6 +94,7 @@ void SockContainer::_resetSockInfo(SockInfo& sockInfo) {
     sockInfo.port = 0;
 
     sockInfo.bufSize = 0;
+    sockInfo.ruleBufSize = 0;
 
     free(sockInfo.ip);
     sockInfo.ip = NULL;
@@ -134,6 +135,7 @@ void SockContainer::resetSockInfoData(SockInfo& sockInfo) {
     sockInfo.headSize = 0;
     sockInfo.bodySize = 0;
     sockInfo.bodyIndex = 0;
+    sockInfo.ruleDone = 0;
 
     free(sockInfo.tlsHeader);
     sockInfo.tlsHeader = NULL;

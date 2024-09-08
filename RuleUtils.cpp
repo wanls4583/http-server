@@ -3,7 +3,7 @@
 #include "RuleUtils.h"
 #include "SockContainer.h"
 
-#define checkRuleData(length) if((length)<=0){return;}
+#define checkRuleData(length) if((length)<0){return;}
 
 extern SockContainer sockContainer;
 
@@ -41,12 +41,13 @@ void RuleUtils::parseRule(char* data, u_int64_t dataLen) {
     node = (RuleNode*)calloc(1, sizeof(RuleNode));
     node->reqFlag = data[index++];
     node->resFlag = data[index++];
-    memcmp(&size, data + index, 2);
+    memcpy(&size, data + index, 2);
     size = ntohs(size);
     index += 2;
     checkRuleData(dataLen - index - size);
     node->rule = (char*)calloc(size + 1, 1);
     memcpy(node->rule, data + index, size);
+    index += size;
     if (preNode) {
       preNode->next = node;
     }
@@ -66,6 +67,7 @@ void RuleUtils::reciveData(char* data, u_int64_t dataLen) {
   int reqSize = data[index++];
   checkRuleData(dataLen - index - reqSize);
   memcpy(&reqId, data + index, reqSize);
+  reqId = ntohll(reqId);
   index += reqSize;
 
   SockInfo* sockInfo = sockContainer.getSockInfoByReqId(reqId);
@@ -75,6 +77,7 @@ void RuleUtils::reciveData(char* data, u_int64_t dataLen) {
     memcpy(buf, data + index, dataLen - index);
     memcpy(buf + dataLen - index, sockInfo->buf, sockInfo->bufSize);
     sockInfo->ruleBuf = buf;
+    sockInfo->ruleBufSize = bufSize;
 
     pthread_cond_broadcast(&sockInfo->cond);
   }
@@ -91,6 +94,7 @@ RuleNode* RuleUtils::findRule(SockInfo* sockInfo) {
     if (wildcardMatch(sockInfo->header->url, node->rule)) {
       return node;
     }
+    node = node->next;
   }
 
   return NULL;

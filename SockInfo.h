@@ -29,8 +29,10 @@ typedef struct SockInfo {
     int isWebSock;
     int recivedCloseFrame;
     int port;
+    int ruleDone;
 
     ssize_t bufSize;
+    ssize_t ruleBufSize;
     ssize_t headSize;
     ssize_t bodySize;
     ssize_t bodyIndex;
