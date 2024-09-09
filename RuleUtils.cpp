@@ -85,13 +85,18 @@ void RuleUtils::reciveData(char* data, u_int64_t dataLen) {
 
 RuleNode* RuleUtils::findRule(SockInfo* sockInfo) {
   RuleNode* node = this->ruleNode;
+  HttpHeader* header = sockInfo->header;
 
-  if (!sockInfo->header || !sockInfo->header->url) {
+  if (sockInfo->localSockInfo) {
+    header = sockInfo->localSockInfo->header;
+  }
+
+  if (!header || !header->url) {
     return NULL;
   }
 
   while (node) {
-    if (wildcardMatch(sockInfo->header->url, node->rule)) {
+    if (wildcardMatch(header->url, node->rule)) {
       return node;
     }
     node = node->next;

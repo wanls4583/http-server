@@ -750,7 +750,7 @@ int checkRule(SockInfo& sockInfo) {
 
     if (ruleNode && !sockInfo.ruleDone) {
         if (sockInfo.localSockInfo) {
-            flag = ruleNode->reqFlag;
+            flag = ruleNode->resFlag;
         } else {
             flag = ruleNode->reqFlag;
         }
@@ -790,7 +790,11 @@ int checkRule(SockInfo& sockInfo) {
             );
         }
 
-        pthread_cond_wait(&sockInfo.cond, &sockInfo.mutex);
+        if (sockInfo.localSockInfo) {
+            pthread_cond_wait(&sockInfo.localSockInfo->cond, &sockInfo.localSockInfo->mutex);
+        } else {
+            pthread_cond_wait(&sockInfo.cond, &sockInfo.mutex);
+        }
 
         sockContainer.resetSockInfoData(sockInfo);
         free(sockInfo.buf);
