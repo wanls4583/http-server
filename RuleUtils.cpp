@@ -72,12 +72,17 @@ void RuleUtils::reciveData(char* data, u_int64_t dataLen) {
 
   SockInfo* sockInfo = sockContainer.getSockInfoByReqId(reqId);
   if (sockInfo) {
-    ssize_t bufSize = sockInfo->bufSize + dataLen - index;
+    SockInfo* nowSockInfo = sockInfo;
+    if (MSG_RES_HEAD == msgType) {
+      nowSockInfo = sockInfo->remoteSockInfo;
+    }
+
+    ssize_t bufSize = nowSockInfo->bufSize + dataLen - index;
     char* buf = (char*)calloc(bufSize, 1);
     memcpy(buf, data + index, dataLen - index);
-    memcpy(buf + dataLen - index, sockInfo->buf, sockInfo->bufSize);
-    sockInfo->ruleBuf = buf;
-    sockInfo->ruleBufSize = bufSize;
+    memcpy(buf + dataLen - index, nowSockInfo->buf, nowSockInfo->bufSize);
+    nowSockInfo->ruleBuf = buf;
+    nowSockInfo->ruleBufSize = bufSize;
 
     pthread_cond_broadcast(&sockInfo->cond);
   }

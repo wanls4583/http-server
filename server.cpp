@@ -19,10 +19,6 @@
 
 using namespace std;
 
-enum { MSG_REQ_HEAD = 1, MSG_REQ_BODY, MSG_REQ_BODY_END, MSG_RES_HEAD, MSG_RES_BODY, MSG_RES_BODY_END, MSG_DNS, MSG_STATUS, MSG_TIME, MSG_CIPHER, MSG_CERT, MSG_PORT, MSG_RULE };
-enum { STATUS_FAIL_CONNECT = 1, STATUS_FAIL_SSL_CONNECT };
-enum { TIME_DNS_START = 1, TIME_DNS_END, TIME_CONNECT_START, TIME_CONNECT_END, TIME_CONNECT_SSL_START, TIME_CONNECT_SSL_END, TIME_REQ_START, TIME_REQ_END, TIME_RES_START, TIME_RES_END };
-
 static int proxyPort = 8000;
 static int servSock;
 static struct sockaddr_in servAddr;
@@ -534,22 +530,25 @@ void sendRecordToLacal(SockInfo& sockInfo, SockInfo* wsSockInfo, int type, char*
 
     int index = 0;
     int idSize = sizeof(uint64_t);
-    int ptSize = sizeof(unsigned short);
+    int uintSize = sizeof(unsigned short);
     ssize_t bufSize = (idSize + 1) * 2 + 1 + size;
     u_int64_t reqId = htonll(sockInfo.reqId);
     u_int64_t sockId = htonll(sockInfo.sockId);
 
     if (type == MSG_REQ_HEAD) {
         bufSize += 1;
-        bufSize += 1 + ptSize;
+        bufSize += 1 + uintSize;
         bufSize += 1 + strlen(sockInfo.ip);
         // 频繁使用popen调用命令行将导致内存泄漏
         // char* p = findPidByPort(sockInfo.port);
         // if (p) {
         //     pid = atoi(p);
         // }
+    } else if (type == MSG_RES_HEAD) {
+        bufSize += 1 + uintSize;
+        bufSize += strlen(sockInfo.header->url);
     } else if (type == MSG_PORT) {
-        bufSize += 1 + ptSize;
+        bufSize += 1 + uintSize;
     }
 
     unsigned char* msg = (unsigned char*)calloc(bufSize, 1);
@@ -569,18 +568,26 @@ void sendRecordToLacal(SockInfo& sockInfo, SockInfo* wsSockInfo, int type, char*
         }
 
         unsigned short pt = htons(sockInfo.port);
-        msg[index++] = ptSize;
-        memcpy(msg + index, &pt, ptSize); // 客户端的端口
-        index += ptSize;
+        msg[index++] = uintSize;
+        memcpy(msg + index, &pt, uintSize); // 客户端的端口
+        index += uintSize;
 
         msg[index++] = strlen(sockInfo.ip);
         memcpy(msg + index, sockInfo.ip, strlen(sockInfo.ip));
         index += strlen(sockInfo.ip);
+    } else if (type == MSG_RES_HEAD) {
+        unsigned short len = htons(strlen(sockInfo.header->url));
+        msg[index++] = uintSize;
+        memcpy(msg + index, &len, uintSize); // url长度
+        index += uintSize;
+
+        memcpy(msg + index, sockInfo.header->url, strlen(sockInfo.header->url));
+        index += strlen(sockInfo.header->url);
     } else if (type == MSG_PORT) {
         unsigned short pt = htons(sockInfo.port);
-        msg[index++] = ptSize;
-        memcpy(msg + index, &pt, ptSize); // 客户端的端口
-        index += ptSize;
+        msg[index++] = uintSize;
+        memcpy(msg + index, &pt, uintSize); // 客户端的端口
+        index += uintSize;
     }
     if (data && size > 0) {
         memcpy(msg + index, data, size);
@@ -716,11 +723,10 @@ int reciveBody(SockInfo& sockInfo, bool ifWrite = true) {
                 return 0;
             }
         } else {
-            if (!ifWrite) {
-                sockInfo.body = (char*)realloc(sockInfo.body, sockInfo.bodySize + dataSize + 1);
-                sockInfo.body[sockInfo.bodySize + dataSize] = 0;
-                memcpy(sockInfo.body + sockInfo.bodySize, sockInfo.buf, dataSize);
-            }
+            sockInfo.body = (char*)realloc(sockInfo.body, sockInfo.bodySize + dataSize + 1);
+            sockInfo.body[sockInfo.bodySize + dataSize] = 0;
+            memcpy(sockInfo.body + sockInfo.bodySize, sockInfo.buf, dataSize);
+            sockInfo.bodySize += dataSize;
         }
 
         if (sockInfo.bufSize > dataSize) {
@@ -776,7 +782,7 @@ int checkRule(SockInfo& sockInfo) {
             sendRecordToLacal(
                 sockInfo.localSockInfo ? *sockInfo.localSockInfo : sockInfo,
                 sockContainer.ruleScokInfo,
-                sockInfo.localSockInfo ? MSG_RES_BODY : MSG_REQ_BODY,
+                sockInfo.localSockInfo ? MSG_RES_HEAD : MSG_REQ_HEAD,
                 buf, sockInfo.headSize + sockInfo.bodySize
             );
         } else {
