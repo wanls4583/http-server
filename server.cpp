@@ -749,17 +749,23 @@ int reciveBody(SockInfo& sockInfo, bool ifWrite = true) {
     return 1;
 }
 
-int checkRule(SockInfo& sockInfo) {
+int checkRule(SockInfo& sockInfo) { // 1:检测成功 -1:无需检测 0:检测出错
     int hasError = 0;
     int flag = 0;
+
+    if (!sockContainer.ruleScokInfo || SOCK_STATE_CLOSED == sockContainer.ruleScokInfo->state || sockInfo.ruleState) {
+        return -1;
+    }
+
     RuleNode* ruleNode = ruleUtils.findRule(&sockInfo);
 
-    if (ruleNode && !sockInfo.ruleDone) {
+    if (ruleNode) {
         if (sockInfo.localSockInfo) {
             flag = ruleNode->resFlag;
         } else {
             flag = ruleNode->reqFlag;
         }
+        sockInfo.ruleState = 1;
     }
 
     if (ruleNode && flag) {
@@ -796,6 +802,7 @@ int checkRule(SockInfo& sockInfo) {
             );
         }
 
+        cout << "checkRule:" << sockInfo.reqId << endl;
         if (sockInfo.localSockInfo) {
             pthread_cond_wait(&sockInfo.localSockInfo->cond, &sockInfo.localSockInfo->mutex);
         } else {
@@ -808,7 +815,7 @@ int checkRule(SockInfo& sockInfo) {
         sockInfo.bufSize = sockInfo.ruleBufSize;
         sockInfo.ruleBuf = NULL;
         sockInfo.ruleBufSize = 0;
-        sockInfo.ruleDone = 1;
+        sockInfo.ruleState = 2;
         return 1;
     }
 

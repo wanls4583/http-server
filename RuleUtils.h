@@ -21,6 +21,7 @@ public:
   void clearRule();
   void parseRule(char* data, u_int64_t dataLen);
   void reciveData(char* data, u_int64_t dataLen);
+  void broadcastAll();
   RuleNode* findRule(SockInfo* sockInfo);
 
 };

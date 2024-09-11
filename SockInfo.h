@@ -29,7 +29,7 @@ typedef struct SockInfo {
     int isWebSock;
     int recivedCloseFrame;
     int port;
-    int ruleDone;
+    int ruleState; // 1:阻塞中, 2:已完成
 
     ssize_t bufSize;
     ssize_t ruleBufSize;

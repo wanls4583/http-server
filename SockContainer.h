@@ -13,7 +13,6 @@ const int MAX_SOCK = 300;
 
 class SockContainer {
 private:
-    SockInfo sockInfos[MAX_SOCK];
     pthread_mutex_t sockContainerMutex;
     pthread_mutex_t shutdownMutex;
     void _resetSockInfo(SockInfo& sockInfo);
@@ -22,6 +21,7 @@ public:
     int timeout;
     u_int64_t reqId; // 每个请求的id唯一
     u_int64_t sockId; // 每个连接的id（一个连接可能有多个请求）
+    SockInfo sockInfos[MAX_SOCK];
     SockContainer();
     ~SockContainer();
     SockInfo* proxyScokInfo; // 本地通信

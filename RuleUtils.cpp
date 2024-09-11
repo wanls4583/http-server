@@ -6,6 +6,7 @@
 #define checkRuleData(length) if((length)<0){return;}
 
 extern SockContainer sockContainer;
+extern const int MAX_SOCK;
 
 RuleUtils::RuleUtils() {
 }
@@ -73,7 +74,7 @@ void RuleUtils::reciveData(char* data, u_int64_t dataLen) {
   SockInfo* sockInfo = sockContainer.getSockInfoByReqId(reqId);
   if (sockInfo) {
     SockInfo* nowSockInfo = sockInfo;
-    if (MSG_RES_HEAD == msgType) {
+    if (sockInfo->ruleState != 1) {
       nowSockInfo = sockInfo->remoteSockInfo;
     }
 
@@ -84,7 +85,32 @@ void RuleUtils::reciveData(char* data, u_int64_t dataLen) {
     nowSockInfo->ruleBuf = buf;
     nowSockInfo->ruleBufSize = bufSize;
 
+    cout << "broadcast:" << sockInfo->reqId << endl;
     pthread_cond_broadcast(&sockInfo->cond);
+  }
+}
+
+void RuleUtils::broadcastAll() {
+  for (int i = 0; i < MAX_SOCK; i++) {
+    SockInfo* sockInfo = &sockContainer.sockInfos[i];
+    SockInfo* nowSockInfo = sockInfo;
+
+    if (nowSockInfo->ruleState == 1 || nowSockInfo->remoteSockInfo && nowSockInfo->remoteSockInfo->ruleState == 1) {
+      if (nowSockInfo->ruleState != 1) {
+        nowSockInfo = nowSockInfo->remoteSockInfo;
+      }
+
+      ssize_t bufSize = nowSockInfo->bufSize + nowSockInfo->headSize + nowSockInfo->bodySize;
+      char* buf = (char*)calloc(bufSize, 1);
+      memcpy(buf, nowSockInfo->head, nowSockInfo->headSize);
+      memcpy(buf + nowSockInfo->headSize, nowSockInfo->body, nowSockInfo->bodySize);
+      memcpy(buf + nowSockInfo->headSize + nowSockInfo->bodySize, nowSockInfo->buf, sockInfo->bufSize);
+      nowSockInfo->ruleBuf = buf;
+      nowSockInfo->ruleBufSize = bufSize;
+
+      cout << "broadcastAll:" << sockInfo->reqId << endl;
+      pthread_cond_broadcast(&sockInfo->cond);
+    }
   }
 }
 

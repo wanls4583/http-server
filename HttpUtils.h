@@ -34,7 +34,6 @@ public:
     string getBoundary(HttpHeader* header);
     void preReciveHeader(SockInfo& sockInfo, int& hasError);
     HttpHeader* reciveHeader(SockInfo& sockInfo, int& hasError);
-    void reciveBody(SockInfo& sockInfo, int& hasError);
     WsFragment* reciveWsFragment(SockInfo& sockInfo, int& hasError);
     void reciveSocksReqHeader(SockInfo& sockInfo, int& hasError);
     ssize_t waiteData(SockInfo& sockInfo);

@@ -454,7 +454,6 @@ HttpHeader* HttpUtils::reciveHeader(SockInfo& sockInfo, int& hasError) {
     HttpHeader* header = NULL;
     ssize_t bufSize = 0;
 
-    // cout << "reciveHeader:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
     while (!sockInfo.header) {
         ssize_t pos = kmpStrstr(sockInfo.buf, "\r\n\r\n", sockInfo.bufSize, 4);
 
@@ -492,67 +491,8 @@ HttpHeader* HttpUtils::reciveHeader(SockInfo& sockInfo, int& hasError) {
             break;
         }
     }
-    // cout << "reciveHeader-end:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
 
-    return header;
-}
-
-void HttpUtils::reciveBody(SockInfo& sockInfo, int& hasError) {
-    ssize_t preSize = 0;
-    ssize_t bufSize = sockInfo.bufSize;
-    HttpHeader* header = sockInfo.header;
-    string boundary = this->getBoundary(sockInfo.header);
-
-    // cout << "reciveBody:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
-    while (1) {
-        if (header->contentLenth) {
-            if (header->contentLenth <= sockInfo.bufSize) {
-                sockInfo.bodySize = header->contentLenth;
-                sockInfo.body = (char*)calloc(sockInfo.bodySize + 1, 1);
-                memcpy(sockInfo.body, sockInfo.buf, sockInfo.bodySize);
-                break;
-            }
-        } else if (boundary.size()) {
-            if (sockInfo.bufSize) {
-                preSize = preSize > boundary.size() ? preSize - boundary.size() : preSize;
-                ssize_t pos = kmpStrstr(sockInfo.buf, boundary.c_str(), sockInfo.bufSize, boundary.size(), preSize);
-                if (pos != -1) {
-                    sockInfo.bodySize = pos + boundary.size();
-                    sockInfo.body = (char*)calloc(sockInfo.bodySize + 1, 1);
-                    memcpy(sockInfo.body, sockInfo.buf, sockInfo.bodySize);
-                    break;
-                }
-            }
-        } else if (header->contentLenth <= 0) {
-            break;
-        }
-
-        if (sockInfo.bufSize > MAX_BODY_SIZE) { // 请求体超出限制
-            bufSize = READ_ERROR;
-            break;
-        }
-
-        preSize = sockInfo.bufSize;
-        bufSize = this->reciveData(sockInfo);
-        checkError(sockInfo, bufSize, hasError);
-        if (hasError) {
-            break;
-        }
-    }
-
-    if (!hasError && sockInfo.bodySize) {
-        sockInfo.bufSize -= sockInfo.bodySize;
-        if (sockInfo.bufSize) {
-            char* buf = (char*)calloc(sockInfo.bufSize + 1, 1);
-            memcpy(buf, sockInfo.buf + sockInfo.bodySize, sockInfo.bufSize);
-            free(sockInfo.buf);
-            sockInfo.buf = buf;
-        } else {
-            free(sockInfo.buf);
-            sockInfo.buf = NULL;
-        }
-    }
-    // cout << "reciveBody-end:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
+    return sockInfo.header;
 }
 
 WsFragment* HttpUtils::reciveWsFragment(SockInfo& sockInfo, int& hasError) {

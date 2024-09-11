@@ -1,9 +1,11 @@
 #include "SockContainer.h"
+#include "RuleUtils.h"
 
 using namespace std;
 
 extern WsUtils wsUtils;
 extern SockContainer sockContainer;
+extern RuleUtils ruleUtils;
 extern pthread_key_t ptKey;
 
 SockContainer::SockContainer(): timeout(10), reqId(1), sockId(1) {
@@ -135,7 +137,7 @@ void SockContainer::resetSockInfoData(SockInfo& sockInfo) {
     sockInfo.headSize = 0;
     sockInfo.bodySize = 0;
     sockInfo.bodyIndex = 0;
-    sockInfo.ruleDone = 0;
+    sockInfo.ruleState = 0;
 
     free(sockInfo.tlsHeader);
     sockInfo.tlsHeader = NULL;
@@ -195,7 +197,10 @@ void SockContainer::shutdownSock(SockInfo* sockInfo) {
     }
 
     sockInfo->state = SOCK_STATE_CLOSED; // 已关闭
-    // cout << "shutdownSock:" << sockInfo->sockId << ":" << sockInfo->sock << endl;
+
+    if (sockContainer.ruleScokInfo == sockInfo) {
+        ruleUtils.broadcastAll();
+    }
 }
 
 void SockContainer::closeSock(SockInfo& sockInfo) {
