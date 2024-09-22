@@ -765,12 +765,12 @@ int checkRule(SockInfo& sockInfo) { // 1:检测成功 -1:无需检测 0:检测�
         } else {
             flag = ruleNode->reqFlag;
         }
-        sockInfo.ruleState = 1;
     }
 
     if (ruleNode && flag) {
         char* buf = NULL;
         bool hasBody = false;
+        sockInfo.ruleState = 1;
         if (sockInfo.localSockInfo) {
             HttpHeader* header = httpUtils.reciveHeader(sockInfo, hasError); // 读取服务器请求头
             hasBody = httpUtils.checkIfResponsBody(header, sockInfo.localSockInfo->header->method);
