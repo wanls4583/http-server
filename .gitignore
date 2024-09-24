@@ -13,4 +13,5 @@ build
 *.njsproj
 *.sln
 *.sw?
+*.db
 tmp.pem

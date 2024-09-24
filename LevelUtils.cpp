@@ -13,11 +13,14 @@ LevelUtils::~LevelUtils() {
 
 char* LevelUtils::get(char* key, ssize_t& size) {
   char* bytes = NULL;
+  size = 0;
   if (this->status.ok()) {
     std::string s;
     leveldb::Status status = this->db->Get(leveldb::ReadOptions(), key, &s);
-    bytes = (char*)calloc(s.size() + 1, 1);
-    memcpy(bytes, s.c_str(), s.size());
+    if (status.ok()) {
+      bytes = (char*)calloc(s.size() + 1, 1);
+      memcpy(bytes, s.c_str(), s.size());
+    }
   }
   return bytes;
 }

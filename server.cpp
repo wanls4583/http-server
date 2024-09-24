@@ -16,6 +16,8 @@
 #include "V8Utils.h"
 #include "SockContainer.h"
 #include "RuleUtils.h"
+#include "LevelUtils.h"
+#include "DataUtils.h"
 
 using namespace std;
 
@@ -31,6 +33,8 @@ pthread_key_t ptKey;
 pthread_mutex_t pemMutex;
 pthread_mutex_t sendRecordMutex;
 RuleUtils ruleUtils;
+LevelUtils levelUtils("level.db");
+DataUtils dataUtils;
 char* scriptScource = NULL;
 
 int initServSock();
@@ -250,6 +254,9 @@ void* initClntSock(void* arg) {
                 } else if (!strcmp(sockInfo.header->path, "/rule")) {
                     httpUtils.sendUpgradeOk(sockInfo);
                     initLocalWebscoket(sockInfo, 2);
+                } else if (!strcmp(sockInfo.header->path, "/data")) {
+                    httpUtils.sendUpgradeOk(sockInfo);
+                    initLocalWebscoket(sockInfo, 3);
                 } else {
                     sockContainer.shutdownSock();
                 }
@@ -443,6 +450,8 @@ int initLocalWebscoket(SockInfo& sockInfo, int type) {
         wsScokInfo = sockContainer.proxyScokInfo;
     } else if (type == 2) {
         wsScokInfo = sockContainer.ruleScokInfo;
+    } else if (type == 3) {
+        wsScokInfo = sockContainer.dataScokInfo;
     }
     if (wsScokInfo) {
         if (wsScokInfo->sockId == sockInfo.sockId) {
@@ -456,6 +465,8 @@ int initLocalWebscoket(SockInfo& sockInfo, int type) {
         sockContainer.proxyScokInfo = &sockInfo;
     } else if (type == 2) {
         sockContainer.ruleScokInfo = &sockInfo;
+    } else if (type == 3) {
+        sockContainer.dataScokInfo = &sockInfo;
     }
     while (1) {
         WsFragment* wsFragment = httpUtils.reciveWsFragment(sockInfo, hasError);
@@ -490,6 +501,10 @@ int initLocalWebscoket(SockInfo& sockInfo, int type) {
                     sendRecordToLacal(sockInfo, sockContainer.ruleScokInfo, MSG_RULE, data, 1);
                 } else if (strncmp(msg, "data:", 5) == 0) {
                     ruleUtils.reciveData(msg + 5, msgLen - 5);
+                } else if (strncmp(msg, "reqBody:", 8) == 0) {
+                    dataUtils.sendData(msg + 8, msgLen - 8, 1);
+                } else if (strncmp(msg, "resBody:", 8) == 0) {
+                    dataUtils.sendData(msg + 8, msgLen - 8, 2);
                 }
                 free(msg);
                 if (READ_ERROR == result) {
