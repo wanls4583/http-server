@@ -2,6 +2,8 @@
 #define LevelUtils_h
 #include "leveldb/db.h"
 
+using namespace std;
+
 class LevelUtils {
 private:
   leveldb::Status status;
@@ -10,8 +12,8 @@ public:
   const char* filename;
   LevelUtils(const char* filename);
   ~LevelUtils();
-  char* get(char* key, ssize_t& size);
-  bool put(char* key, char* data, ssize_t size);
-  bool del(char* key);
+  char* get(string key, ssize_t& size);
+  bool put(string key, char* data, ssize_t size);
+  bool del(string key);
 };
 #endif

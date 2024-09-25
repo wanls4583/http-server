@@ -38,7 +38,6 @@ DataUtils dataUtils;
 char* scriptScource = NULL;
 
 int initServSock();
-void* initV8Loop(void* arg);
 void* initClntSock(void* arg);
 int initRemoteSock(SockInfo& sockInfo);
 ssize_t getChunkSize(SockInfo& sockInfo, ssize_t& numSize);
@@ -505,6 +504,12 @@ int initLocalWebscoket(SockInfo& sockInfo, int type) {
                     dataUtils.sendData(msg + 8, msgLen - 8, 1);
                 } else if (strncmp(msg, "resBody:", 8) == 0) {
                     dataUtils.sendData(msg + 8, msgLen - 8, 2);
+                } else if (strncmp(msg, "getPem:", 7) == 0) {
+                    dataUtils.sendData(msg + 7, msgLen - 7, 3);
+                } else if (strncmp(msg, "getRule:", 8) == 0) {
+                    dataUtils.sendData(msg + 8, msgLen - 8, 4);
+                } else if (strncmp(msg, "saveRule:", 9) == 0) {
+                    dataUtils.saveRule(msg + 9, msgLen - 9);
                 }
                 free(msg);
                 if (READ_ERROR == result) {
@@ -604,6 +609,15 @@ void sendRecordToLacal(SockInfo& sockInfo, SockInfo* wsSockInfo, int type, char*
         memcpy(msg + index, &pt, uintSize); // 客户端的端口
         index += uintSize;
     }
+
+    if (MSG_REQ_BODY == type) {
+        dataUtils.saveBody(data, size, 1, sockInfo.reqId);
+    } else if (MSG_RES_BODY == type) {
+        dataUtils.saveBody(data, size, 2, sockInfo.reqId);
+    } else if (MSG_CERT == type) {
+        dataUtils.savePem(data, size, sockInfo.reqId);
+    }
+
     if (data && size > 0) {
         memcpy(msg + index, data, size);
     }

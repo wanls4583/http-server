@@ -16,7 +16,45 @@ DataUtils::DataUtils() {
 DataUtils::~DataUtils() {
 }
 
-void DataUtils::saveBody(char* data, u_int64_t dataLen, SockInfo& sockInfo) {
+void DataUtils::saveRule(char* data, u_int64_t dataLen) {
+  string key = "rule";
+  levelUtils.put(key, data, dataLen);
+}
+
+void DataUtils::savePem(char* data, u_int64_t dataLen, u_int64_t reqId) {
+  string key = "";
+  key += "pem:";
+  key += reqId;
+  levelUtils.put(key, data, dataLen);
+}
+
+void DataUtils::saveBody(char* data, u_int64_t dataLen, int type, u_int64_t reqId) {
+  ssize_t size = 0;
+  string key = "";
+
+  if (type == 1) {
+    key = "reqBodyChunks:";
+    key += reqId;
+  } else {
+    key = "resBodyChunks:";
+    key += reqId;
+  }
+
+  char* bytes = levelUtils.get(key, size);
+  int chunks = atoi(bytes);
+  bytes = (char*)to_string(chunks).c_str();
+  levelUtils.del(key);
+  levelUtils.put(key, bytes, strlen(bytes));
+
+  if (type == 1) {
+    key = "reqBody:";
+    key += reqId;
+  } else {
+    key = "resBody:";
+    key += reqId;
+  }
+
+  levelUtils.put(key, data, dataLen);
 }
 
 void DataUtils::sendData(char* data, u_int64_t dataLen, int type) {
@@ -37,10 +75,15 @@ void DataUtils::sendData(char* data, u_int64_t dataLen, int type) {
   } else if (type == 2) {
     key = "resBodyChunks:";
     key += reqId;
+  } else if (type == 3) {
+    key = "pem:";
+    key += reqId;
+  } else if (type == 4) {
+    key = "rule";
   }
 
   ssize_t size = 0;
-  char* bytes = levelUtils.get((char*)(key).c_str(), size);
+  char* bytes = levelUtils.get(key, size);
 
   char* result = bytes;
   ssize_t resultSize = size;
@@ -51,9 +94,11 @@ void DataUtils::sendData(char* data, u_int64_t dataLen, int type) {
 
     int chunks = atoi(bytes);
     for (int i = 0; i < chunks; i++) {
-      string key = "reqBody:";
+      string key = type == 1 ? "reqBody:" : "resBody:";
+      key += reqId;
+      key += ":";
       key += i;
-      bytes = levelUtils.get((char*)(key).c_str(), size);
+      bytes = levelUtils.get(key, size);
       if (bytes) {
         result = (char*)realloc(result, resultSize + size + 1);
         memcpy(result + resultSize, bytes, size);
