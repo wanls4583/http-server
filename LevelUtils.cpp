@@ -20,6 +20,7 @@ char* LevelUtils::get(string key, ssize_t& size) {
     if (status.ok()) {
       bytes = (char*)calloc(s.size() + 1, 1);
       memcpy(bytes, s.c_str(), s.size());
+      size = s.size();
     }
   }
   return bytes;

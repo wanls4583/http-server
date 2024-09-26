@@ -8,9 +8,8 @@ private:
 public:
   DataUtils();
   ~DataUtils();
-  void saveRule(char* data, u_int64_t dataLen);
-  void savePem(char* data, u_int64_t dataLen, u_int64_t reqId);
-  void saveBody(char* data, u_int64_t dataLen, int type, u_int64_t reqId);
-  void sendData(char* data, u_int64_t dataLen, int type);
+  char* getData(int dataType, u_int64_t reqId, ssize_t& size);
+  void saveData(char* data, u_int64_t dataLen, int type, u_int64_t reqId = 0);
+  void sendData(char* data, u_int64_t dataLen);
 };
 #endif

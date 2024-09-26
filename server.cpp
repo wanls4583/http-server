@@ -493,23 +493,14 @@ int initLocalWebscoket(SockInfo& sockInfo, int type) {
                     result = wsUtils.sendMsg(sockInfo, (unsigned char*)"start", 5);
                 } else if (strcmp(msg, "ping") == 0) {
                     result = wsUtils.sendMsg(sockInfo, (unsigned char*)"pong", 4);
-                } else if (strncmp(msg, "rule:", 5) == 0) {
-                    char data[1];
-                    ruleUtils.parseRule(msg + 5, msgLen - 5);
-                    data[0] = ruleUtils.reciveId;
-                    sendRecordToLacal(sockInfo, sockContainer.ruleScokInfo, MSG_RULE, data, 1);
-                } else if (strncmp(msg, "data:", 5) == 0) {
-                    ruleUtils.reciveData(msg + 5, msgLen - 5);
-                } else if (strncmp(msg, "reqBody:", 8) == 0) {
-                    dataUtils.sendData(msg + 8, msgLen - 8, 1);
-                } else if (strncmp(msg, "resBody:", 8) == 0) {
-                    dataUtils.sendData(msg + 8, msgLen - 8, 2);
-                } else if (strncmp(msg, "getPem:", 7) == 0) {
-                    dataUtils.sendData(msg + 7, msgLen - 7, 3);
-                } else if (strncmp(msg, "getRule:", 8) == 0) {
-                    dataUtils.sendData(msg + 8, msgLen - 8, 4);
-                } else if (strncmp(msg, "saveRule:", 9) == 0) {
-                    dataUtils.saveRule(msg + 9, msgLen - 9);
+                } else if (strncmp(msg, "rule-check:", 11) == 0) {
+                    ruleUtils.reciveData(msg + 11, msgLen - 11);
+                } else if (strncmp(msg, "rule-parse:", 11) == 0) {
+                    ruleUtils.parseRule(msg + 11, msgLen - 11);
+                } else if (strncmp(msg, "data-get:", 9) == 0) {
+                    dataUtils.sendData(msg + 9, msgLen - 9);
+                } else if (strncmp(msg, "data-put:", 9) == 0) {
+                    dataUtils.saveData(msg + 10, msgLen - 10, msg[9]);
                 }
                 free(msg);
                 if (READ_ERROR == result) {
@@ -551,7 +542,7 @@ void sendRecordToLacal(SockInfo& sockInfo, SockInfo* wsSockInfo, int type, char*
     int index = 0;
     int idSize = sizeof(uint64_t);
     int uintSize = sizeof(unsigned short);
-    ssize_t bufSize = (idSize + 1) * 2 + 1 + size;
+    ssize_t bufSize = (idSize + 1) * 2 + 1;
     u_int64_t reqId = htonll(sockInfo.reqId);
     u_int64_t sockId = htonll(sockInfo.sockId);
 
@@ -610,15 +601,30 @@ void sendRecordToLacal(SockInfo& sockInfo, SockInfo* wsSockInfo, int type, char*
         index += uintSize;
     }
 
-    if (MSG_REQ_BODY == type) {
-        dataUtils.saveBody(data, size, 1, sockInfo.reqId);
+    if (MSG_REQ_HEAD == type) {
+        dataUtils.saveData(data, size, DATA_TYPE_REQ_HEAD, sockInfo.reqId);
+    } else if (MSG_RES_HEAD == type) {
+        dataUtils.saveData(data, size, DATA_TYPE_RES_HEAD, sockInfo.reqId);
+    } else if (MSG_REQ_BODY == type) {
+        dataUtils.saveData(data, size, DATA_TYPE_REQ_BODY, sockInfo.reqId);
     } else if (MSG_RES_BODY == type) {
-        dataUtils.saveBody(data, size, 2, sockInfo.reqId);
+        dataUtils.saveData(data, size, DATA_TYPE_RES_BODY, sockInfo.reqId);
     } else if (MSG_CERT == type) {
-        dataUtils.savePem(data, size, sockInfo.reqId);
+        dataUtils.saveData(data, size, DATA_TYPE_CERT, sockInfo.reqId);
+        return;
     }
 
     if (data && size > 0) {
+        if (MSG_REQ_BODY == type || MSG_RES_BODY == type) { // 只发送大小
+            u_int64_t len = htonll(size);
+            size = 1 + idSize;
+            data = (char*)calloc(size, 1);
+            data[0] = idSize;
+            memcpy(data + 1, &len, idSize);
+        }
+        bufSize += size;
+        msg = (unsigned char*)realloc(msg, bufSize + 1);
+        msg[bufSize] = 0;
         memcpy(msg + index, data, size);
     }
 

@@ -1,12 +1,15 @@
+#include "utils.h"
 #include "DataUtils.h"
 #include "LevelUtils.h"
 #include "SockContainer.h"
+#include "RuleUtils.h"
 
 #define checkData(length) if((length)<0){return;}
 
 extern LevelUtils levelUtils;
 extern SockContainer sockContainer;
 extern WsUtils wsUtils;
+extern RuleUtils ruleUtils;
 
 using namespace std;
 
@@ -16,101 +19,118 @@ DataUtils::DataUtils() {
 DataUtils::~DataUtils() {
 }
 
-void DataUtils::saveRule(char* data, u_int64_t dataLen) {
-  string key = "rule";
-  levelUtils.put(key, data, dataLen);
-}
-
-void DataUtils::savePem(char* data, u_int64_t dataLen, u_int64_t reqId) {
+void DataUtils::saveData(char* data, u_int64_t dataLen, int type, u_int64_t reqId) {
   string key = "";
-  key += "pem:";
-  key += reqId;
-  levelUtils.put(key, data, dataLen);
-}
+  if (DATA_TYPE_RULE == type) {
+    key = "rule";
+  } else if (DATA_TYPE_CERT == type) {
+    key = "cert:";
+    key += to_string(reqId);
+  } else if (DATA_TYPE_REQ_HEAD == type) {
+    key = "reqHead:";
+    key += to_string(reqId);
+  } else if (DATA_TYPE_RES_HEAD == type) {
+    key = "resHead:";
+    key += to_string(reqId);
+  } else if (DATA_TYPE_REQ_BODY == type || DATA_TYPE_RES_BODY == type) {
+    if (DATA_TYPE_REQ_BODY == type) {
+      key = "reqBodyChunkSize:";
+    } else if (DATA_TYPE_RES_BODY == type) {
+      key = "resBodyChunkSize:";
+    }
+    key += to_string(reqId);
 
-void DataUtils::saveBody(char* data, u_int64_t dataLen, int type, u_int64_t reqId) {
-  ssize_t size = 0;
-  string key = "";
+    ssize_t size = 0;
+    char* bytes = levelUtils.get(key, size);
+    int chunks = bytes ? atoi(bytes) : 0;
+    bytes = (char*)to_string(chunks + 1).c_str();
+    levelUtils.del(key);
+    levelUtils.put(key, bytes, strlen(bytes));
 
-  if (type == 1) {
-    key = "reqBodyChunks:";
-    key += reqId;
-  } else {
-    key = "resBodyChunks:";
-    key += reqId;
+    if (type == DATA_TYPE_REQ_BODY) {
+      key = "reqBody:";
+    } else {
+      key = "resBody:";
+    }
+    key += to_string(reqId);
+    key += ":";
+    key += to_string(chunks);
   }
 
-  char* bytes = levelUtils.get(key, size);
-  int chunks = atoi(bytes);
-  bytes = (char*)to_string(chunks).c_str();
-  levelUtils.del(key);
-  levelUtils.put(key, bytes, strlen(bytes));
-
-  if (type == 1) {
-    key = "reqBody:";
-    key += reqId;
-  } else {
-    key = "resBody:";
-    key += reqId;
-  }
-
   levelUtils.put(key, data, dataLen);
 }
 
-void DataUtils::sendData(char* data, u_int64_t dataLen, int type) {
-  u_int64_t index = 0, reqId = 0;
+char* DataUtils::getData(int dataType, u_int64_t reqId, ssize_t& size) {
+  string key = "";
+  if (DATA_TYPE_RULE == dataType) {
+    key = "rule";
+  } else if (DATA_TYPE_CERT == dataType) {
+    key = "cert:";
+    key += to_string(reqId);
+  } else if (DATA_TYPE_REQ_HEAD == dataType) {
+    key = "reqHead:";
+    key += to_string(reqId);
+  } else if (DATA_TYPE_RES_HEAD == dataType) {
+    key = "resHead:";
+    key += to_string(reqId);
+  } else if (DATA_TYPE_REQ_BODY == dataType) {
+    key = "reqBodyChunkSize:";
+    key += to_string(reqId);
+  } else if (DATA_TYPE_RES_BODY == dataType) {
+    key = "resBodyChunkSize:";
+    key += to_string(reqId);
+  }
+
+  size = 0;
+  char* result = levelUtils.get(key, size);
+
+  if (DATA_TYPE_REQ_BODY == dataType || DATA_TYPE_RES_BODY == dataType) {
+    ssize_t chunkSize = 0;
+    char* bytes = NULL;
+    int chunks = result ? atoi(result) : 0;
+
+    size = 0;
+    result = NULL;
+    for (int i = 0; i < chunks; i++) {
+      string key = dataType == 1 ? "reqBody:" : "resBody:";
+      key += to_string(reqId);
+      key += ":";
+      key += to_string(i);
+      bytes = levelUtils.get(key, chunkSize);
+      if (bytes) {
+        result = (char*)realloc(result, size + chunkSize + 1);
+        memcpy(result + size, bytes, chunkSize);
+        size += chunkSize;
+        result[size] = 0;
+      }
+    }
+  }
+
+  return result;
+}
+
+void DataUtils::sendData(char* data, u_int64_t dataLen) {
+  u_int64_t index = 0, reqSize = 0, reqId = 0, dataType = 0;
 
   checkData(dataLen - 2);
+  dataType = data[index++];
+  reqSize = data[index++];
 
-  int reqSize = data[index++];
   checkData(dataLen - index - reqSize);
   memcpy(&reqId, data + index, reqSize);
   reqId = ntohll(reqId);
   index += reqSize;
 
-  string key = "";
-  if (type == 1) {
-    key = "reqBodyChunks:";
-    key += reqId;
-  } else if (type == 2) {
-    key = "resBodyChunks:";
-    key += reqId;
-  } else if (type == 3) {
-    key = "pem:";
-    key += reqId;
-  } else if (type == 4) {
-    key = "rule";
-  }
+  ssize_t resultSize = 0;
+  char* result = this->getData(dataType, reqId, resultSize);
 
-  ssize_t size = 0;
-  char* bytes = levelUtils.get(key, size);
-
-  char* result = bytes;
-  ssize_t resultSize = size;
-
-  if (type == 1 || type == 2) {
-    result = NULL;
-    resultSize = 0;
-
-    int chunks = atoi(bytes);
-    for (int i = 0; i < chunks; i++) {
-      string key = type == 1 ? "reqBody:" : "resBody:";
-      key += reqId;
-      key += ":";
-      key += i;
-      bytes = levelUtils.get(key, size);
-      if (bytes) {
-        result = (char*)realloc(result, resultSize + size + 1);
-        memcpy(result + resultSize, bytes, size);
-        resultSize += size;
-        result[resultSize] = 0;
-      }
-    }
-  }
-
-  ssize_t bufSize = 1 + reqSize + resultSize;
+  ssize_t bufSize = 2 + reqSize + resultSize;
   unsigned char* buf = (unsigned char*)calloc(bufSize + 1, 1);
-  memcpy(buf, data, 1 + reqSize);
-  memcpy(buf + 1 + reqSize, result, resultSize);
+
+  index = 0;
+  memcpy(buf, data, 1 + 1 + reqSize);
+  index += 1 + 1 + reqSize;
+
+  memcpy(buf + index, result, resultSize);
   wsUtils.sendMsg(*sockContainer.dataScokInfo, buf, bufSize, 1, 2);
 }
