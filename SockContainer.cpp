@@ -106,12 +106,14 @@ void SockContainer::_resetSockInfo(SockInfo& sockInfo) {
     sockInfo.ip = NULL;
     free(sockInfo.buf);
     sockInfo.buf = NULL;
+    free(sockInfo.ruleBuf);
+    sockInfo.ruleBuf = NULL;
     free(sockInfo.cipher);
     sockInfo.cipher = NULL;
     free(sockInfo.pem_cert);
     sockInfo.pem_cert = NULL;
-    free(sockInfo.ruleBuf);
-    sockInfo.ruleBuf = NULL;
+    free(sockInfo.clientPath);
+    sockInfo.clientPath = NULL;
 
     sockInfo.tv.tv_sec = 0;
     sockInfo.tv.tv_nsec = 0;

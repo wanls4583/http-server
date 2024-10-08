@@ -10,6 +10,7 @@
 #include <openssl/err.h>
 #include <openssl/bio.h>
 #include <pthread.h>
+#include <libproc.h>
 #include "utils.h"
 #include "TlsUtils.h"
 #include "HttpUtils.h"
@@ -32,6 +33,7 @@ WsUtils wsUtils;
 pthread_key_t ptKey;
 pthread_mutex_t pemMutex;
 pthread_mutex_t sendRecordMutex;
+pthread_mutex_t cmdMutex;
 RuleUtils ruleUtils;
 LevelUtils levelUtils("level.db");
 DataUtils dataUtils;
@@ -40,6 +42,7 @@ char* scriptScource = NULL;
 int initServSock();
 void* initClntSock(void* arg);
 int initRemoteSock(SockInfo& sockInfo);
+void getClientPath(SockInfo& sockInfo);
 ssize_t getChunkSize(SockInfo& sockInfo, ssize_t& numSize);
 int reciveBody(SockInfo& sockInfo, bool ifWrite);
 int checkRule(SockInfo& sockInfo);
@@ -57,6 +60,7 @@ int main() {
     signal(SIGPIPE, SIG_IGN); // 屏蔽SIGPIPE信号，防止进程退出
     pthread_mutex_init(&pemMutex, NULL);
     pthread_mutex_init(&sendRecordMutex, NULL);
+    pthread_mutex_init(&cmdMutex, NULL);
     pthread_key_create(&ptKey, NULL);
     servSock = initServSock();
     if (servSock < 0) {
@@ -133,7 +137,6 @@ void* initClntSock(void* arg) {
     // cout << "initClntSock:" << sockInfo.sockId << ":" << sockInfo.sock << endl;
     pthread_setspecific(ptKey, arg);
     sockContainer.setNoBlock(sockInfo, 1); // 设置成非阻塞模式
-    sendRecordToLacal(sockInfo, sockContainer.proxyScokInfo, MSG_PORT, NULL, 0);
 
     if (!sockInfo.isNoCheckSSL) {
         httpUtils.preReciveHeader(sockInfo, hasError);
@@ -541,25 +544,23 @@ void sendRecordToLacal(SockInfo& sockInfo, SockInfo* wsSockInfo, int type, char*
 
     int index = 0;
     int idSize = sizeof(uint64_t);
-    int uintSize = sizeof(unsigned short);
+    int usSize = sizeof(unsigned short);
     ssize_t bufSize = (idSize + 1) * 2 + 1;
     u_int64_t reqId = htonll(sockInfo.reqId);
     u_int64_t sockId = htonll(sockInfo.sockId);
 
     if (type == MSG_REQ_HEAD) {
         bufSize += 1;
-        bufSize += 1 + uintSize;
+        bufSize += 1 + usSize;
         bufSize += 1 + strlen(sockInfo.ip);
-        // 频繁使用popen调用命令行将导致内存泄漏
-        // char* p = findPidByPort(sockInfo.port);
-        // if (p) {
-        //     pid = atoi(p);
-        // }
+        bufSize += 1 + usSize;
+        getClientPath(sockInfo);
+        if (sockInfo.clientPath) {
+            bufSize += strlen(sockInfo.clientPath);
+        }
     } else if (type == MSG_RES_HEAD) {
-        bufSize += 1 + uintSize;
+        bufSize += 1 + usSize;
         bufSize += strlen(sockInfo.header->url);
-    } else if (type == MSG_PORT) {
-        bufSize += 1 + uintSize;
     }
 
     unsigned char* msg = (unsigned char*)calloc(bufSize, 1);
@@ -579,26 +580,29 @@ void sendRecordToLacal(SockInfo& sockInfo, SockInfo* wsSockInfo, int type, char*
         }
 
         unsigned short pt = htons(sockInfo.port);
-        msg[index++] = uintSize;
-        memcpy(msg + index, &pt, uintSize); // 客户端的端口
-        index += uintSize;
+        msg[index++] = usSize;
+        memcpy(msg + index, &pt, usSize); // 客户端的端口
+        index += usSize;
 
         msg[index++] = strlen(sockInfo.ip);
         memcpy(msg + index, sockInfo.ip, strlen(sockInfo.ip));
         index += strlen(sockInfo.ip);
+
+        unsigned short originClientPathLen = sockInfo.clientPath ? strlen(sockInfo.clientPath) : 0;
+        unsigned short clientPathLen = htons(originClientPathLen);
+        msg[index++] = usSize;
+        memcpy(msg + index, &clientPathLen, usSize);
+        index += usSize;
+        memcpy(msg + index, sockInfo.clientPath, originClientPathLen);
+        index += originClientPathLen;
     } else if (type == MSG_RES_HEAD) {
         unsigned short len = htons(strlen(sockInfo.header->url));
-        msg[index++] = uintSize;
-        memcpy(msg + index, &len, uintSize); // url长度
-        index += uintSize;
+        msg[index++] = usSize;
+        memcpy(msg + index, &len, usSize); // url长度
+        index += usSize;
 
         memcpy(msg + index, sockInfo.header->url, strlen(sockInfo.header->url));
         index += strlen(sockInfo.header->url);
-    } else if (type == MSG_PORT) {
-        unsigned short pt = htons(sockInfo.port);
-        msg[index++] = uintSize;
-        memcpy(msg + index, &pt, uintSize); // 客户端的端口
-        index += uintSize;
     }
 
     if (MSG_REQ_HEAD == type) {
@@ -633,6 +637,21 @@ void sendRecordToLacal(SockInfo& sockInfo, SockInfo* wsSockInfo, int type, char*
     pthread_mutex_unlock(&sendRecordMutex);
 
     free(msg);
+}
+
+void getClientPath(SockInfo& sockInfo) {
+    if (!sockInfo.clientPath) {
+        char* p = findPidByPort(sockInfo.port);
+        if (p) {
+            int pid = atoi(p);
+            char pathbuf[PROC_PIDPATHINFO_MAXSIZE];
+            int ret = proc_pidpath(pid, pathbuf, sizeof(pathbuf));
+            if (ret > 0) {
+                sockInfo.clientPath = (char*)calloc(ret + 1, 1);
+                memcpy(sockInfo.clientPath, pathbuf, ret);
+            }
+        }
+    }
 }
 
 ssize_t getChunkSize(SockInfo& sockInfo, ssize_t& numSize) {

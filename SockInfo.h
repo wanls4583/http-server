@@ -46,6 +46,7 @@ typedef struct SockInfo {
     char* ruleBuf; // 被修改的bug
     char* cipher;
     char* pem_cert;
+    char* clientPath;
     WsFragment* wsFragment;
 
     struct timespec tv;

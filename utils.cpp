@@ -3,6 +3,8 @@
 #include <openssl/ssl.h>
 #include <unistd.h>
 
+extern pthread_mutex_t cmdMutex;
+
 char* to_lower(char* s) {
     ssize_t len = strlen(s);
     for (ssize_t i = 0; i < len; i++) {
@@ -238,10 +240,13 @@ char* findPidByPort(int pt) {
     char* port = (char*)s.c_str();
     string cmd = "netstat -anv -p TCP | grep ";
     cmd += port;
+    pthread_mutex_lock(&cmdMutex);
     char* text = runCmd(cmd.c_str());
+    pthread_mutex_unlock(&cmdMutex);
     if (!text || !strlen(text)) {
         return pid;
     }
+    // cout << text << endl;
     // cout << "text:" << strlen(text) << endl;
     // return NULL;
     // char* text = (char*)"tcp4       0      0  127.0.0.1.56711        127.0.0.1.56712        ESTABLISHED  408209  146988  41901      0 00182 00000000 0000000000513a09 00000080 01000900      1      0 000001\ntcp4       0      0  127.0.0.1.56712        127.0.0.1.56711        ESTABLISHED  408108  146988  41902      0 00182 00000000 0000000000513a08 00000080 04000900      1      0 0000001"; //目标文本
@@ -280,7 +285,7 @@ char* findPidByPort(int pt) {
             p += end;
         }
 
-        for (int i = 0; i <= 7; i++) {
+        for (int i = 0; i <= 9; i++) {
             status = regexec(spaceReg, line, 1, m, 0);
             if (status == REG_NOMATCH) {
                 break;
@@ -297,7 +302,7 @@ char* findPidByPort(int pt) {
                     break;
                 }
             }
-            if (i == 7) {
+            if (i == 9) {
                 char* pt = line + end;
                 status = regexec(spaceReg, pt, 1, m, 0);
                 if (status == REG_NOMATCH) {
