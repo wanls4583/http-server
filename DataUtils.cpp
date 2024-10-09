@@ -6,10 +6,10 @@
 
 #define checkData(length) if((length)<0){return;}
 
-extern LevelUtils levelUtils;
+extern LevelUtils persitLevelUtils;
+extern LevelUtils tempLevelUtils;
 extern SockContainer sockContainer;
 extern WsUtils wsUtils;
-extern RuleUtils ruleUtils;
 
 using namespace std;
 
@@ -20,9 +20,12 @@ DataUtils::~DataUtils() {
 }
 
 void DataUtils::saveData(char* data, u_int64_t dataLen, int type, u_int64_t reqId) {
+  LevelUtils* levelUtils = &tempLevelUtils;
   string key = "";
   if (DATA_TYPE_RULE == type) {
     key = "rule";
+    levelUtils = &persitLevelUtils;
+    levelUtils->del(key);
   } else if (DATA_TYPE_CERT == type) {
     key = "cert:";
     key += to_string(reqId);
@@ -41,11 +44,11 @@ void DataUtils::saveData(char* data, u_int64_t dataLen, int type, u_int64_t reqI
     key += to_string(reqId);
 
     ssize_t size = 0;
-    char* bytes = levelUtils.get(key, size);
+    char* bytes = levelUtils->get(key, size);
     int chunks = bytes ? atoi(bytes) : 0;
     bytes = (char*)to_string(chunks + 1).c_str();
-    levelUtils.del(key);
-    levelUtils.put(key, bytes, strlen(bytes));
+    levelUtils->del(key);
+    levelUtils->put(key, bytes, strlen(bytes));
 
     if (type == DATA_TYPE_REQ_BODY) {
       key = "reqBody:";
@@ -57,13 +60,15 @@ void DataUtils::saveData(char* data, u_int64_t dataLen, int type, u_int64_t reqI
     key += to_string(chunks);
   }
 
-  levelUtils.put(key, data, dataLen);
+  levelUtils->put(key, data, dataLen);
 }
 
 char* DataUtils::getData(int dataType, u_int64_t reqId, ssize_t& size) {
+  LevelUtils* levelUtils = &tempLevelUtils;
   string key = "";
   if (DATA_TYPE_RULE == dataType) {
     key = "rule";
+    levelUtils = &persitLevelUtils;
   } else if (DATA_TYPE_CERT == dataType) {
     key = "cert:";
     key += to_string(reqId);
@@ -82,7 +87,7 @@ char* DataUtils::getData(int dataType, u_int64_t reqId, ssize_t& size) {
   }
 
   size = 0;
-  char* result = levelUtils.get(key, size);
+  char* result = levelUtils->get(key, size);
 
   if (DATA_TYPE_REQ_BODY == dataType || DATA_TYPE_RES_BODY == dataType) {
     ssize_t chunkSize = 0;
@@ -96,7 +101,7 @@ char* DataUtils::getData(int dataType, u_int64_t reqId, ssize_t& size) {
       key += to_string(reqId);
       key += ":";
       key += to_string(i);
-      bytes = levelUtils.get(key, chunkSize);
+      bytes = levelUtils->get(key, chunkSize);
       if (bytes) {
         result = (char*)realloc(result, size + chunkSize + 1);
         memcpy(result + size, bytes, chunkSize);

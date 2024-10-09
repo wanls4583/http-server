@@ -185,6 +185,12 @@ char* runCmd(const char* strCmd) {
     return NULL;
 }
 
+void removeDir(const char* dir) {
+    string cmd = "rm -rf ";
+    cmd += dir;
+    runCmd(cmd.c_str());
+}
+
 char* readFile(ifstream& inFile, ssize_t& len) {
 
     inFile.seekg(0, inFile.end);

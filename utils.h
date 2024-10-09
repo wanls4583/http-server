@@ -27,6 +27,7 @@ int kmpStrstr(const char* s, const char* p, ssize_t sSize, ssize_t pSize, ssize_
 char* copyBuf(const char* str);
 char* sliceBuf(const char* str, ssize_t start, ssize_t end);
 char* runCmd(const char* strCmd);
+void removeDir(const char* dir);
 char* readFile(ifstream& inFile, ssize_t& len);
 char* findPidByPort(int port);
 bool wildcardMatch(char* s, char* p);

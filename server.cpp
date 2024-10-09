@@ -35,7 +35,8 @@ pthread_mutex_t pemMutex;
 pthread_mutex_t sendRecordMutex;
 pthread_mutex_t cmdMutex;
 RuleUtils ruleUtils;
-LevelUtils levelUtils("level.db");
+LevelUtils persitLevelUtils("persist_level.db");
+LevelUtils tempLevelUtils("temp_level.db", true);
 DataUtils dataUtils;
 char* scriptScource = NULL;
 
@@ -504,6 +505,8 @@ int initLocalWebscoket(SockInfo& sockInfo, int type) {
                     dataUtils.sendData(msg + 9, msgLen - 9);
                 } else if (strncmp(msg, "data-put:", 9) == 0) {
                     dataUtils.saveData(msg + 10, msgLen - 10, msg[9]);
+                } else if (strncmp(msg, "data-clear:", 9) == 0) {
+                    tempLevelUtils.clear();
                 }
                 free(msg);
                 if (READ_ERROR == result) {
