@@ -12,17 +12,17 @@
 #define FORMAT_NET 4
 #define FORMAT_P12 5
 
-class CertUtils
-{
+class CertUtils {
 private:
-    RSA *rsa;
-    X509 *rootCert;
-    EVP_PKEY *rootKey;
+    RSA* rsa;
+    X509* rootCert;
+    EVP_PKEY* rootKey;
 
 public:
     CertUtils();
-    int add_ext(X509 *cert, int nid, char *value);
-    int createCertFromRequestFile(EVP_PKEY **pkey, X509 **domainCert, char *serverName);
+    int add_ext(X509* cert, int nid, char* value);
+    int createCertFromRequestFile(EVP_PKEY** pkey, X509** domainCert, char* serverName);
     char* getRootCertNameByOid(char* oId);
+    void showX509(X509* x509);
 };
 #endif

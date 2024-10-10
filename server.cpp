@@ -436,6 +436,7 @@ int initRemoteSock(SockInfo& sockInfo) {
             pthread_mutex_unlock(&pemMutex);
 
             sockInfo.remoteSockInfo->pem_cert = buf;
+            tlsUtil.certUtils.showX509(x509);
             // 获取服务器证书--end
         }
     }

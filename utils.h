@@ -3,6 +3,8 @@
 #include <iostream>
 #include <sstream>
 #include <fstream>
+#include <unistd.h>
+#include <openssl/ssl.h>
 #include "utils/hex.h"
 #include "utils/md5.h"
 #include "utils/sha.h"
@@ -29,6 +31,7 @@ char* sliceBuf(const char* str, ssize_t start, ssize_t end);
 char* runCmd(const char* strCmd);
 void removeDir(const char* dir);
 char* readFile(ifstream& inFile, ssize_t& len);
+struct tm ASN1_GetTm(ASN1_TIME* time);
 char* findPidByPort(int port);
 bool wildcardMatch(char* s, char* p);
 

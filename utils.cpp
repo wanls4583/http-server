@@ -1,7 +1,5 @@
 #include "utils.h"
 #include "regex.h"
-#include <openssl/ssl.h>
-#include <unistd.h>
 
 extern pthread_mutex_t cmdMutex;
 
@@ -206,7 +204,7 @@ char* readFile(ifstream& inFile, ssize_t& len) {
     return arr;
 }
 
-static tm ASN1_GetTm(ASN1_TIME* time) {
+struct tm ASN1_GetTm(ASN1_TIME* time) {
     struct tm t;
     const char* str = (const char*)time->data;
     size_t i = 0;

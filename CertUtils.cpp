@@ -1,5 +1,6 @@
 #include "CertUtils.h"
 #include "utils/hex.h"
+#include "utils.h"
 
 #define pemFilePath "rootCA/rootCA.crt"
 #define keyFilePath "rootCA/rootCA.key"
@@ -138,7 +139,7 @@ char* CertUtils::getRootCertNameByOid(char* oId) {
     return (char*)calloc(1, 1);
 }
 
-void showX509(X509* x509) {
+void CertUtils::showX509(X509* x509) {
     X509_NAME* subject = X509_get_subject_name(x509);
     X509_NAME* isUser = X509_get_issuer_name(x509);
     char* subject_str = X509_NAME_oneline(subject, NULL, 0);
@@ -176,8 +177,10 @@ void showX509(X509* x509) {
 
     ASN1_TIME* not_before = X509_get_notBefore(x509);
     ASN1_TIME* not_after = X509_get_notAfter(x509);
-    printf("not_before: %s\n", not_before->data);
-    printf("not_after: %s\n", not_after->data);
+    struct tm t1 = ASN1_GetTm(not_before);
+    struct tm t2 = ASN1_GetTm(not_after);
+    printf("not_before: %s %d-%d-%d\n", not_before->data, t1.tm_year + 1900, t1.tm_mon + 1, t1.tm_mday);
+    printf("not_after: %s %d-%d-%d\n", not_after->data, t2.tm_year + 1900, t2.tm_mon + 1, t2.tm_mday);
 
     GENERAL_NAMES* subjectAltNames = (GENERAL_NAMES*)X509_get_ext_d2i(x509, NID_subject_alt_name, NULL, NULL);
     int cnt = sk_GENERAL_NAME_num(subjectAltNames);
