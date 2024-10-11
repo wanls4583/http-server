@@ -435,8 +435,13 @@ int initRemoteSock(SockInfo& sockInfo) {
             fclose(pemFile);
             pthread_mutex_unlock(&pemMutex);
 
+            string str = "";
+            str += buf;
+            str += "@@@@";
+            str += tlsUtil.certUtils.parseX509(x509);
+            buf = (char*)calloc(str.size() + 1, 1);
+            memcpy(buf, str.c_str(), str.size());
             sockInfo.remoteSockInfo->pem_cert = buf;
-            tlsUtil.certUtils.showX509(x509);
             // 获取服务器证书--end
         }
     }

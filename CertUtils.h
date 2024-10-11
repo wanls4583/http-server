@@ -23,6 +23,6 @@ public:
     int add_ext(X509* cert, int nid, char* value);
     int createCertFromRequestFile(EVP_PKEY** pkey, X509** domainCert, char* serverName);
     char* getRootCertNameByOid(char* oId);
-    void showX509(X509* x509);
+    std::string parseX509(X509* x509);
 };
 #endif

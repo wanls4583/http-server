@@ -139,58 +139,106 @@ char* CertUtils::getRootCertNameByOid(char* oId) {
     return (char*)calloc(1, 1);
 }
 
-void CertUtils::showX509(X509* x509) {
+string CertUtils::parseX509(X509* x509) {
+    string result = "";
     X509_NAME* subject = X509_get_subject_name(x509);
     X509_NAME* isUser = X509_get_issuer_name(x509);
     char* subject_str = X509_NAME_oneline(subject, NULL, 0);
     char* issuer_str = X509_NAME_oneline(isUser, NULL, 0);
-    printf("subject: %s\n", subject_str);
-    printf("issuer: %s\n", issuer_str);
+    // printf("subject: %s\n", subject_str);
+    // printf("issuer: %s\n", issuer_str);
+    result += subject_str;
+    result += "\n";
+    result += issuer_str;
+    result += "\n";
 
-    int entryCount = X509_NAME_entry_count(subject);
-    for (int i = 0; i < entryCount; i++) {
-        X509_NAME_ENTRY* entry = X509_NAME_get_entry(subject, i);
-        ASN1_OBJECT* obj = X509_NAME_ENTRY_get_object(entry);
-        ASN1_STRING* data = X509_NAME_ENTRY_get_data(entry);
-        // 解析OID为可读字符串
-        char oidStr[80];
-        OBJ_obj2txt(oidStr, sizeof(oidStr), obj, 1);
-        // 获取数据
-        char* dataStr = (char*)ASN1_STRING_get0_data(data);
-        // 打印结果
-        printf("Field %d: OID=%s, Data=%s\n", i, oidStr, dataStr);
-    }
+    // int entryCount = X509_NAME_entry_count(subject);
+    // for (int i = 0; i < entryCount; i++) {
+    //     X509_NAME_ENTRY* entry = X509_NAME_get_entry(subject, i);
+    //     ASN1_OBJECT* obj = X509_NAME_ENTRY_get_object(entry);
+    //     ASN1_STRING* data = X509_NAME_ENTRY_get_data(entry);
+    //     // 解析OID为可读字符串
+    //     char oidStr[80];
+    //     OBJ_obj2txt(oidStr, sizeof(oidStr), obj, 1);
+    //     // 获取数据
+    //     char* dataStr = (char*)ASN1_STRING_get0_data(data);
+    //     // 打印结果
+    //     printf("Field %d: OID=%s, Data=%s\n", i, oidStr, dataStr);
+    // }
     int version = ((int)X509_get_version(x509)) + 1;
-    printf("tls_version: %d\n", version);
+    // printf("tls_version: %d\n", version);
+    result += to_string(version);
+    result += "\n";
 
     ASN1_INTEGER* serial = X509_get_serialNumber(x509);
     BIGNUM* bn = ASN1_INTEGER_to_BN(serial, NULL);
     char* tmp = BN_bn2hex(bn);
-    printf("serial: %s\n", tmp);
+    // printf("serial: %s\n", tmp);
+    result += tmp;
+    result += "\n";
 
     char buf[4096] = { 0 };
     const EVP_MD* digest = EVP_sha1();
     unsigned len;
     int rc = X509_digest(x509, digest, (unsigned char*)buf, &len);
-    printf("digest: ");
-    show_hex(buf, len, 1);
+    // printf("digest: ");
+    // show_hex(buf, len, 1);
+    result += hex_to_string((unsigned char*)buf, len);
+    result += "\n";
 
     ASN1_TIME* not_before = X509_get_notBefore(x509);
     ASN1_TIME* not_after = X509_get_notAfter(x509);
     struct tm t1 = ASN1_GetTm(not_before);
     struct tm t2 = ASN1_GetTm(not_after);
-    printf("not_before: %s %d-%d-%d\n", not_before->data, t1.tm_year + 1900, t1.tm_mon + 1, t1.tm_mday);
-    printf("not_after: %s %d-%d-%d\n", not_after->data, t2.tm_year + 1900, t2.tm_mon + 1, t2.tm_mday);
+    // printf("not_before: %s %d-%d-%d\n", not_before->data, t1.tm_year + 1900, t1.tm_mon + 1, t1.tm_mday);
+    // printf("not_after: %s %d-%d-%d\n", not_after->data, t2.tm_year + 1900, t2.tm_mon + 1, t2.tm_mday);
+    result += to_string(t1.tm_year + 1900);
+    result += "-";
+    result += to_string(t1.tm_mon + 1);
+    result += "-";
+    result += to_string(t1.tm_mday);
+    result += " ";
+    result += to_string(t1.tm_hour);
+    result += ":";
+    result += to_string(t1.tm_min);
+    result += ":";
+    result += to_string(t1.tm_sec);
+    result += "\n";
+    result += to_string(t2.tm_year + 1900);
+    result += "-";
+    result += to_string(t2.tm_mon + 1);
+    result += "-";
+    result += to_string(t2.tm_mday);
+    result += " ";
+    result += to_string(t2.tm_hour);
+    result += ":";
+    result += to_string(t2.tm_min);
+    result += ":";
+    result += to_string(t2.tm_sec);
+    result += "\n";
 
     GENERAL_NAMES* subjectAltNames = (GENERAL_NAMES*)X509_get_ext_d2i(x509, NID_subject_alt_name, NULL, NULL);
     int cnt = sk_GENERAL_NAME_num(subjectAltNames);
     for (int i = 0; i < cnt; i++) {
         GENERAL_NAME* generalName = sk_GENERAL_NAME_value(subjectAltNames, i);
         if (generalName->type == GEN_DNS) {
-            cout << generalName->d.dNSName->data << endl;
+            // cout << generalName->d.dNSName->data << endl;
+            result += (char*)generalName->d.dNSName->data;
+            result += ";";
         } else if (generalName->type == GEN_IPADD) {
             unsigned char* data = generalName->d.ip->data;
-            cout << data[0] << '.' << data[1] << '.' << data[2] << '.' << data[3] << endl;
+            // cout << data[0] << '.' << data[1] << '.' << data[2] << '.' << data[3] << endl;
+            result += to_string(data[0]);
+            result += ".";
+            result += to_string(data[1]);
+            result += ".";
+            result += to_string(data[2]);
+            result += ".";
+            result += to_string(data[3]);
+            result += ";";
         }
     }
+
+    // cout << result << endl;
+    return result;
 }
