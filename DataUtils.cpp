@@ -1,3 +1,4 @@
+#include "brotli/decode.h"
 #include "utils.h"
 #include "DataUtils.h"
 #include "LevelUtils.h"
@@ -58,6 +59,13 @@ void DataUtils::saveData(char* data, u_int64_t dataLen, int type, u_int64_t reqI
     key += to_string(reqId);
     key += ":";
     key += to_string(chunks);
+
+    SockInfo* sockInfo = sockContainer.getSockInfoByReqId(reqId);
+    size_t decoded_size = 0;
+    uint8_t decoded_buf[size * 20];
+    if (sockInfo->remoteSockInfo && sockInfo->remoteSockInfo->header && sockInfo->remoteSockInfo->header->contentEncoding && !strcmp(sockInfo->remoteSockInfo->header->contentEncoding, "br")) {
+      BrotliDecoderResult st = BrotliDecoderDecompress(size, (uint8_t*)data, &decoded_size, decoded_buf);
+    }
   }
 
   levelUtils->put(key, data, dataLen);

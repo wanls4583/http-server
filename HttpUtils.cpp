@@ -198,6 +198,9 @@ void HttpUtils::setHeaderKeyValue(HttpHeader* header, string head) {
             free(strs);
         } else if (prop.compare("content-length") == 0) {
             header->contentLenth = atol(val.c_str());
+        } else if (prop.compare("content-encoding") == 0) {
+            header->contentEncoding = new char[val.size() + 1];
+            strcpy(header->contentEncoding, val.c_str());
         } else if (prop.compare("connection") == 0) {
             header->connnection = new char[val.size() + 1];
             strcpy(header->connnection, val.c_str());

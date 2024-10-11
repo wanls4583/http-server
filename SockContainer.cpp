@@ -27,6 +27,7 @@ void SockContainer::freeHeader(HttpHeader* header) {
     free(header->url);
     free(header->method);
     free(header->contentType);
+    free(header->contentEncoding);
     free(header->boundary);
     free(header->connnection);
     free(header->proxyConnection);

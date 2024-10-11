@@ -11,6 +11,7 @@ typedef struct HttpHeader
     char *url;
     char *method;
     char *contentType;
+    char *contentEncoding;
     char *boundary;
     char *connnection;
     char *proxyConnection;
