@@ -26,7 +26,6 @@ public:
     ~SockContainer();
     SockInfo* proxyScokInfo; // 链接列表
     SockInfo* ruleScokInfo; // 规则通信
-    SockInfo* dataScokInfo; // 用于客户端获取存储的请求体/响应体
     void freeHeader(HttpHeader* header);
     void freeSocksReqHeader(SocksReqHeader* header);
     void resetSockInfo(SockInfo& sockInfo);

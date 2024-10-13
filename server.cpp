@@ -11,6 +11,7 @@
 #include <openssl/bio.h>
 #include <pthread.h>
 #include <libproc.h>
+#include <regex>
 #include "utils.h"
 #include "TlsUtils.h"
 #include "HttpUtils.h"
@@ -494,6 +495,42 @@ int checkApi(SockInfo& sockInfo) {
         } else {
             httpUtils.sendJson(sockInfo, sockInfo.body, sockInfo.bodySize, contentType);
         }
+    } else if (!strncmp(api, "/get", strlen("/get"))) { // 获取数据
+        char* contentType = (char*)"application/octet-stream";
+        char* type = api + strlen("/get");
+        char* buf = NULL;
+        ssize_t size = 0;
+        if (!strncmp(type, "/rule", strlen("/rule"))) {
+            buf = dataUtils.getData(DATA_TYPE_RULE, 0, size);
+        } else if (!strncmp(type, "/cert", strlen("/cert"))) {
+            u_int64_t reqId = stoull(type + strlen("/cert") + 1);
+            buf = dataUtils.getData(DATA_TYPE_CERT, reqId, size);
+        } else if (!strncmp(type, "/req_head", strlen("/req_head"))) {
+            u_int64_t reqId = stoull(type + strlen("/req_head") + 1);
+            buf = dataUtils.getData(DATA_TYPE_REQ_HEAD, reqId, size);
+        } else if (!strncmp(type, "/res_head", strlen("/res_head"))) {
+            u_int64_t reqId = stoull(type + strlen("/res_head") + 1);
+            buf = dataUtils.getData(DATA_TYPE_RES_HEAD, reqId, size);
+        } else if (!strncmp(type, "/req_body", strlen("/req_body"))) {
+            u_int64_t reqId = stoull(type + strlen("/req_body") + 1);
+            buf = dataUtils.getData(DATA_TYPE_REQ_BODY, reqId, size);
+        } else if (!strncmp(type, "/res_body", strlen("/res_body"))) {
+            u_int64_t reqId = stoull(type + strlen("/res_body") + 1);
+            buf = dataUtils.getData(DATA_TYPE_RES_BODY, reqId, size);
+        }
+        httpUtils.sendJson(sockInfo, buf, size, contentType);
+    } else if (!strncmp(api, "/put", strlen("/put"))) { // 保存数据
+        char* contentType = (char*)"application/json";
+        char* type = api + strlen("/put");
+        char* buf = NULL;
+        ssize_t size = 0;
+
+        if (!strncmp(type, "/rule", strlen("/rule"))) {
+            dataUtils.saveData(sockInfo.body, sockInfo.bodySize, DATA_TYPE_RULE);
+        } else if (!strncmp(type, "/clear", strlen("/clear"))) {
+            tempLevelUtils.clear();
+        }
+        httpUtils.sendJson(sockInfo, NULL, 0, contentType);
     } else {
         httpUtils.send404(sockInfo);
     }
@@ -509,8 +546,6 @@ int initLocalWebscoket(SockInfo& sockInfo, int type) {
         wsScokInfo = sockContainer.proxyScokInfo;
     } else if (type == 2) {
         wsScokInfo = sockContainer.ruleScokInfo;
-    } else if (type == 3) {
-        wsScokInfo = sockContainer.dataScokInfo;
     }
     if (wsScokInfo) {
         if (wsScokInfo->sockId == sockInfo.sockId) {
@@ -524,8 +559,6 @@ int initLocalWebscoket(SockInfo& sockInfo, int type) {
         sockContainer.proxyScokInfo = &sockInfo;
     } else if (type == 2) {
         sockContainer.ruleScokInfo = &sockInfo;
-    } else if (type == 3) {
-        sockContainer.dataScokInfo = &sockInfo;
     }
     while (1) {
         WsFragment* wsFragment = httpUtils.reciveWsFragment(sockInfo, hasError);
@@ -557,12 +590,6 @@ int initLocalWebscoket(SockInfo& sockInfo, int type) {
                     ruleUtils.reciveData(msg + 11, msgLen - 11);
                 } else if (strncmp(msg, "rule-parse:", 11) == 0) {
                     ruleUtils.parseRule(msg + 11, msgLen - 11);
-                } else if (strncmp(msg, "data-get:", 9) == 0) {
-                    dataUtils.sendData(msg + 9, msgLen - 9);
-                } else if (strncmp(msg, "data-put:", 9) == 0) {
-                    dataUtils.saveData(msg + 10, msgLen - 10, msg[9]);
-                } else if (strncmp(msg, "data-clear:", 9) == 0) {
-                    tempLevelUtils.clear();
                 }
                 free(msg);
                 if (READ_ERROR == result) {

@@ -74,10 +74,6 @@ void SockContainer::_resetSockInfo(SockInfo& sockInfo) {
         sockContainer.ruleScokInfo = NULL;
     }
 
-    if (sockContainer.dataScokInfo == &sockInfo) {
-        sockContainer.dataScokInfo = NULL;
-    }
-
     if (sockInfo.ssl) {
         SSL_free(sockInfo.ssl);
         sockInfo.ssl = NULL;

@@ -113,29 +113,3 @@ char* DataUtils::getData(int dataType, u_int64_t reqId, ssize_t& size) {
 
   return result;
 }
-
-void DataUtils::sendData(char* data, u_int64_t dataLen) {
-  u_int64_t index = 0, reqSize = 0, reqId = 0, dataType = 0;
-
-  checkData(dataLen - 2);
-  dataType = data[index++];
-  reqSize = data[index++];
-
-  checkData(dataLen - index - reqSize);
-  memcpy(&reqId, data + index, reqSize);
-  reqId = ntohll(reqId);
-  index += reqSize;
-
-  ssize_t resultSize = 0;
-  char* result = this->getData(dataType, reqId, resultSize);
-
-  ssize_t bufSize = 2 + reqSize + resultSize;
-  unsigned char* buf = (unsigned char*)calloc(bufSize + 1, 1);
-
-  index = 0;
-  memcpy(buf, data, 1 + 1 + reqSize);
-  index += 1 + 1 + reqSize;
-
-  memcpy(buf + index, result, resultSize);
-  wsUtils.sendMsg(*sockContainer.dataScokInfo, buf, bufSize, 1, 2);
-}
