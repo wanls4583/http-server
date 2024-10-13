@@ -11,6 +11,7 @@
 #include <openssl/bio.h>
 #include <pthread.h>
 #include <libproc.h>
+#include "brotli/decode.h"
 #include "utils.h"
 #include "TlsUtils.h"
 #include "HttpUtils.h"
@@ -45,7 +46,7 @@ void* initClntSock(void* arg);
 int initRemoteSock(SockInfo& sockInfo);
 void getClientPath(SockInfo& sockInfo);
 ssize_t getChunkSize(SockInfo& sockInfo, ssize_t& numSize);
-int reciveBody(SockInfo& sockInfo, bool ifWrite);
+int reciveBody(SockInfo& sockInfo, bool ifWrite = true);
 int checkRule(SockInfo& sockInfo);
 int forward(SockInfo& sockInfo);
 void* forwardWebocket(void* arg);
@@ -236,6 +237,7 @@ void* initClntSock(void* arg) {
             return NULL;
         }
         if (sockInfo.header->port == proxyPort) { // 本地访问代理设置页面
+            cout << sockInfo.header->path << endl;
             // wbscoket升级请求，ws/wss：
             // "GET / HTTP/1.1r\n
             // Host: my.test.com:8000r\n
@@ -264,6 +266,42 @@ void* initClntSock(void* arg) {
                     sockContainer.shutdownSock();
                 }
                 return NULL;
+            } else if (!strncmp(sockInfo.header->path, "/api", strlen("/api"))) {
+                char* api = sockInfo.header->path + strlen("/api");
+                string boundary = httpUtils.getBoundary(sockInfo.header);
+                if (sockInfo.header->contentLenth > 0 || boundary.size()) {
+                    if (!reciveBody(sockInfo, false)) { // 读取客户端请求体
+                        return NULL;
+                    }
+                }
+                if (!strcmp(sockInfo.header->method, "OPTIONS")) {
+                    httpUtils.sendOptionsOk(sockInfo);
+                    sockContainer.resetSockInfoData(sockInfo);
+                    initClntSock(arg);
+                    return NULL;
+                }
+                if (!strncmp(api, "/decompress", strlen("/decompress"))) {
+                    char* contentType = (char*)"application/octet-stream";
+                    char* type = api + strlen("/decompress");
+                    if (!sockInfo.bodySize) {
+                        httpUtils.sendJson(sockInfo, NULL, 0, contentType);
+                        return NULL;
+                    }
+                    if (!strcmp(type, "/br")) {
+                        size_t decoded_size = sockInfo.bodySize * 20;
+                        uint8_t decoded_buf[sockInfo.bodySize * 20];
+                        BrotliDecoderResult st = BrotliDecoderDecompress(sockInfo.bodySize, (uint8_t*)sockInfo.body, &decoded_size, decoded_buf);
+                        if (st == BROTLI_DECODER_RESULT_SUCCESS) {
+                            httpUtils.sendJson(sockInfo, (char*)decoded_buf, decoded_size, contentType);
+                        } else {
+                            httpUtils.sendJson(sockInfo, sockInfo.body, sockInfo.bodySize, contentType);
+                        }
+                    } else {
+                        httpUtils.send404(sockInfo);
+                    }
+                } else {
+                    httpUtils.send404(sockInfo);
+                }
             } else {
                 httpUtils.sendFile(sockInfo);
             }
@@ -319,6 +357,8 @@ void* initClntSock(void* arg) {
         } else {
             sockContainer.shutdownSock();
         }
+    } else {
+        sockContainer.shutdownSock();
     }
 
     return NULL;
@@ -686,7 +726,7 @@ ssize_t getChunkSize(SockInfo& sockInfo, ssize_t& numSize) {
     return stol(num, NULL, 16);
 }
 
-int reciveBody(SockInfo& sockInfo, bool ifWrite = true) {
+int reciveBody(SockInfo& sockInfo, bool ifWrite) {
     HttpHeader* header = sockInfo.header;
     string boundary = httpUtils.getBoundary(header);
     ssize_t bufSize = sockInfo.bufSize;

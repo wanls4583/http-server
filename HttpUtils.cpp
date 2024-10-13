@@ -810,6 +810,18 @@ bool HttpUtils::checkIfResponsBody(HttpHeader* header, char* method) {
     return false;
 }
 
+ssize_t HttpUtils::sendOptionsOk(SockInfo& sockInfo) {
+    string s = "HTTP/1.1 204 No Content\r\n";
+    s += "Allow: *\r\n";
+    s += "Cache-Control: max-age=86400\r\n";
+    
+    s += "Access-Control-Max-Age: max-age=86400\r\n";
+    s += "Access-Control-Allow-Methods: *\r\n";
+    s += "Access-Control-Allow-Origin: *\r\n";
+    s += "Access-Control-Allow-Headers: *\r\n\r\n";
+    return this->writeData(sockInfo, (char*)s.c_str(), s.length());
+}
+
 ssize_t HttpUtils::sendTunnelOk(SockInfo& sockInfo) {
     string s = "HTTP/1.1 200 Connection Established\r\n\r\n";
     return this->writeData(sockInfo, (char*)s.c_str(), s.length());
@@ -892,6 +904,25 @@ int HttpUtils::sendFile(SockInfo& sockInfo) {
         this->send404(sockInfo);
         return 0;
     }
+}
+
+ssize_t HttpUtils::sendJson(SockInfo& sockInfo, char* data, ssize_t datalen, char* contentType) {
+    string s = "HTTP/1.1 200 OK\r\nConnection: close\r\n";
+    s += "Access-Control-Allow-Origin: *\r\n";
+    s += "Access-Control-Allow-Headers: *\r\n";
+    s += "Content-Type: ";
+    s += contentType;
+    s += "\r\n";
+    s += "Content-Length: ";
+    s += to_string(datalen);
+    s += "\r\n\r\n";
+    if (data) {
+        s += data;
+    }
+
+    ssize_t err = this->writeData(sockInfo, (char*)s.c_str(), s.length());
+
+    return err;
 }
 
 ssize_t HttpUtils::send404(SockInfo& sockInfo) {

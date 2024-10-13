@@ -43,11 +43,13 @@ public:
     void checkError(SockInfo& sockInfo, ssize_t& bufSize, int& hasError);
     bool checkIfWebScoket(HttpHeader* header);
     bool checkIfResponsBody(HttpHeader* header, char* method);
+    ssize_t sendOptionsOk(SockInfo& sockInfo);
     ssize_t sendTunnelOk(SockInfo& sockInfo);
     ssize_t sendUpgradeOk(SockInfo& sockInfo);
     ssize_t sendSocksOk(SockInfo& sockInfo);
     ssize_t sendSocksRes(SockInfo& sockInfo);
     int sendFile(SockInfo& sockInfo);
+    ssize_t sendJson(SockInfo& sockInfo, char* data, ssize_t datalen, char* contentType = (char*)"application/json;charset=UTF-8");
     ssize_t send404(SockInfo& sockInfo);
     string getType(string fName);
     void createReqData(SockInfo& sockInfo, char*& req, ssize_t& reqSize);
