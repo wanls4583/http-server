@@ -22,6 +22,7 @@
                 "-lv8_libplatform",
                 "-lleveldb",
                 "-lbrotlidec",
+                "-lz", //zlib
                 "-g",
                 // "${file}", //当前活动的文件
                 "${fileDirname}/*.cpp",
@@ -46,21 +47,30 @@
             "label": "C/C++: g++ 生成活动文件",
             "command": "/usr/bin/g++",
             "args": [
-                "-fdiagnostics-color=always",
+                "-fcolor-diagnostics",
+                "-fansi-escape-codes",
                 "-L/opt/homebrew/opt/openssl@1.1/lib",
                 "-I/opt/homebrew/opt/openssl@1.1/include",
-                "-I/opt/homebrew/opt/v8@11.7/include",
+                "-I/opt/homebrew/opt/v8@11.7/libexec/include",
                 "-L/opt/homebrew/opt/v8@11.7/lib",
+                "-L/opt/homebrew/Cellar/leveldb/1.23_1/lib",
+                "-I/opt/homebrew/Cellar/leveldb/1.23_1/include",
+                "-L/opt/homebrew/Cellar/brotli/1.1.0/lib",
+                "-I/opt/homebrew/Cellar/brotli/1.1.0/include",
+                "-lssl",
+                "-lcrypto",
                 "-lv8",
                 "-lv8_libbase",
                 "-lv8_libplatform",
+                "-lleveldb",
+                "-lbrotlidec",
+                "-lz", //zlib
                 "-g",
                 // "${file}", //当前活动的文件
                 "${fileDirname}/*.cpp",
+                "${fileDirname}/utils/*.c",
                 "-o",
                 "${fileDirname}/build/${fileBasenameNoExtension}",
-                "-lssl",
-                "-lcrypto",
                 "-std=c++17",
                 "-DV8_COMPRESS_POINTERS",
                 "-DV8_ENABLE_SANDBOX"

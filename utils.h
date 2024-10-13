@@ -5,6 +5,8 @@
 #include <fstream>
 #include <unistd.h>
 #include <openssl/ssl.h>
+#include <zlib.h>
+#include "brotli/decode.h"
 #include "utils/hex.h"
 #include "utils/md5.h"
 #include "utils/sha.h"
@@ -13,6 +15,11 @@
 
 using namespace std;
 
+typedef enum {
+  E_ZIP_RAW = -MAX_WBITS,
+  E_ZIP_ZLIB = MAX_WBITS,
+  E_ZIP_GZIP = MAX_WBITS + 16
+} zip_type;
 enum { STATUS_FAIL_CONNECT = 1, STATUS_FAIL_SSL_CONNECT };
 enum { MSG_REQ_HEAD = 1, MSG_REQ_BODY, MSG_REQ_BODY_END, MSG_RES_HEAD, MSG_RES_BODY, MSG_RES_BODY_END, MSG_DNS, MSG_STATUS, MSG_TIME, MSG_CIPHER, MSG_CERT, MSG_RULE };
 enum { TIME_DNS_START = 1, TIME_DNS_END, TIME_CONNECT_START, TIME_CONNECT_END, TIME_CONNECT_SSL_START, TIME_CONNECT_SSL_END, TIME_REQ_START, TIME_REQ_END, TIME_RES_START, TIME_RES_END };
@@ -34,5 +41,7 @@ char* readFile(ifstream& inFile, ssize_t& len);
 struct tm ASN1_GetTm(ASN1_TIME* time);
 char* findPidByPort(int port);
 bool wildcardMatch(char* s, char* p);
+char* brotli_decompress(char* data, ssize_t datalen, ssize_t* destLen);
+char* zlib_decompress(char* data, ssize_t datalen, ssize_t* destLen, zip_type type);
 
 #endif

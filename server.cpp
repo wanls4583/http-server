@@ -11,7 +11,6 @@
 #include <openssl/bio.h>
 #include <pthread.h>
 #include <libproc.h>
-#include "brotli/decode.h"
 #include "utils.h"
 #include "TlsUtils.h"
 #include "HttpUtils.h"
@@ -44,6 +43,7 @@ char* scriptScource = NULL;
 int initServSock();
 void* initClntSock(void* arg);
 int initRemoteSock(SockInfo& sockInfo);
+int checkApi(SockInfo& sockInfo);
 void getClientPath(SockInfo& sockInfo);
 ssize_t getChunkSize(SockInfo& sockInfo, ssize_t& numSize);
 int reciveBody(SockInfo& sockInfo, bool ifWrite = true);
@@ -266,41 +266,9 @@ void* initClntSock(void* arg) {
                     sockContainer.shutdownSock();
                 }
                 return NULL;
-            } else if (!strncmp(sockInfo.header->path, "/api", strlen("/api"))) {
-                char* api = sockInfo.header->path + strlen("/api");
-                string boundary = httpUtils.getBoundary(sockInfo.header);
-                if (sockInfo.header->contentLenth > 0 || boundary.size()) {
-                    if (!reciveBody(sockInfo, false)) { // 读取客户端请求体
-                        return NULL;
-                    }
-                }
-                if (!strcmp(sockInfo.header->method, "OPTIONS")) {
-                    httpUtils.sendOptionsOk(sockInfo);
-                    sockContainer.resetSockInfoData(sockInfo);
-                    initClntSock(arg);
+            } else if (!strncmp(sockInfo.header->path, "/api", strlen("/api"))) { // 本地ajax请求
+                if (!checkApi(sockInfo)) {
                     return NULL;
-                }
-                if (!strncmp(api, "/decompress", strlen("/decompress"))) {
-                    char* contentType = (char*)"application/octet-stream";
-                    char* type = api + strlen("/decompress");
-                    if (!sockInfo.bodySize) {
-                        httpUtils.sendJson(sockInfo, NULL, 0, contentType);
-                        return NULL;
-                    }
-                    if (!strcmp(type, "/br")) {
-                        size_t decoded_size = sockInfo.bodySize * 20;
-                        uint8_t decoded_buf[sockInfo.bodySize * 20];
-                        BrotliDecoderResult st = BrotliDecoderDecompress(sockInfo.bodySize, (uint8_t*)sockInfo.body, &decoded_size, decoded_buf);
-                        if (st == BROTLI_DECODER_RESULT_SUCCESS) {
-                            httpUtils.sendJson(sockInfo, (char*)decoded_buf, decoded_size, contentType);
-                        } else {
-                            httpUtils.sendJson(sockInfo, sockInfo.body, sockInfo.bodySize, contentType);
-                        }
-                    } else {
-                        httpUtils.send404(sockInfo);
-                    }
-                } else {
-                    httpUtils.send404(sockInfo);
                 }
             } else {
                 httpUtils.sendFile(sockInfo);
@@ -487,6 +455,48 @@ int initRemoteSock(SockInfo& sockInfo) {
     }
 
     sockContainer.setNoBlock(*sockInfo.remoteSockInfo, 1); // 设置成非阻塞模式
+
+    return 1;
+}
+
+int checkApi(SockInfo& sockInfo) {
+    char* api = sockInfo.header->path + strlen("/api");
+    string boundary = httpUtils.getBoundary(sockInfo.header);
+    if (sockInfo.header->contentLenth > 0 || boundary.size()) {
+        if (!reciveBody(sockInfo, false)) { // 读取客户端请求体
+            return 0;
+        }
+    }
+    if (!strcmp(sockInfo.header->method, "OPTIONS")) {
+        httpUtils.sendOptionsOk(sockInfo);
+        sockContainer.resetSockInfoData(sockInfo);
+        initClntSock(&sockInfo);
+        return 0;
+    }
+    if (!strncmp(api, "/decompress", strlen("/decompress"))) { // 解压
+        char* contentType = (char*)"application/octet-stream";
+        char* type = api + strlen("/decompress");
+        if (!sockInfo.bodySize) {
+            httpUtils.sendJson(sockInfo, NULL, 0, contentType);
+            return 0;
+        }
+        ssize_t decoded_size = 0;
+        char* decoded_buf = NULL;
+        if (!strcmp(type, "/br")) {
+            decoded_buf = brotli_decompress(sockInfo.body, sockInfo.bodySize, &decoded_size);
+        } else if (!strcmp(type, "/gzip")) {
+            decoded_buf = zlib_decompress(sockInfo.body, sockInfo.bodySize, &decoded_size, E_ZIP_GZIP);
+        } else if (!strcmp(type, "/deflate")) {
+            decoded_buf = zlib_decompress(sockInfo.body, sockInfo.bodySize, &decoded_size, E_ZIP_RAW);
+        }
+        if (decoded_buf) {
+            httpUtils.sendJson(sockInfo, decoded_buf, decoded_size, contentType);
+        } else {
+            httpUtils.sendJson(sockInfo, sockInfo.body, sockInfo.bodySize, contentType);
+        }
+    } else {
+        httpUtils.send404(sockInfo);
+    }
 
     return 1;
 }

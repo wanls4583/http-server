@@ -814,7 +814,7 @@ ssize_t HttpUtils::sendOptionsOk(SockInfo& sockInfo) {
     string s = "HTTP/1.1 204 No Content\r\n";
     s += "Allow: *\r\n";
     s += "Cache-Control: max-age=86400\r\n";
-    
+
     s += "Access-Control-Max-Age: max-age=86400\r\n";
     s += "Access-Control-Allow-Methods: *\r\n";
     s += "Access-Control-Allow-Origin: *\r\n";
@@ -916,11 +916,15 @@ ssize_t HttpUtils::sendJson(SockInfo& sockInfo, char* data, ssize_t datalen, cha
     s += "Content-Length: ";
     s += to_string(datalen);
     s += "\r\n\r\n";
+
+    char* buf = (char*)calloc(s.size() + datalen + 1, 1);
+    memcpy(buf, s.c_str(), s.size());
     if (data) {
-        s += data;
+        memcpy(buf + s.size(), data, datalen);
     }
 
-    ssize_t err = this->writeData(sockInfo, (char*)s.c_str(), s.length());
+    ssize_t err = this->writeData(sockInfo, buf, s.size() + datalen);
+    free(buf);
 
     return err;
 }
@@ -954,9 +958,24 @@ void HttpUtils::createReqData(SockInfo& sockInfo, char*& req, ssize_t& reqSize) 
     string head = sockInfo.head;
     HttpHeader* header = sockInfo.header;
     int pos = head.find("\r\n");
-    // char* dhead = this->replaceHeaderKeyVal(sockInfo.head + pos + 2, (char*)"accept-encoding", (char*)"br"); // 替换请求头
+    // char* dhead = this->addHeaderKeyVal(sockInfo.head + pos + 2, (char*)"lisong", (char*)"haha"); // 新增请求头
     // char* dhead = this->delHeaderKeyVal(sockInfo.head + pos + 2, (char*)"accept-encoding"); // 取消压缩
-    char* dhead = this->addHeaderKeyVal(sockInfo.head + pos + 2, (char*)"lisong", (char*)"haha"); // 新增请求头
+    char* dhead = NULL;
+    if (sockInfo.header->acceptEncoding) { // 解压暂时只支持 gzip、deflate、br
+        string acceptEncoding = sockInfo.header->acceptEncoding;
+        string encoding = "";
+        if (acceptEncoding.find("gzip") != acceptEncoding.npos) {
+            encoding += "gzip, ";
+        }
+        if (acceptEncoding.find("deflate") != acceptEncoding.npos) {
+            encoding += "deflate, ";
+        }
+        if (acceptEncoding.find("br") != acceptEncoding.npos) {
+            encoding += "br, ";
+        }
+        encoding = encoding.substr(0, encoding.size() - 2);
+        dhead = this->replaceHeaderKeyVal(sockInfo.head + pos + 2, (char*)"accept-encoding", (char*)encoding.c_str()); // 替换请求头
+    }
     char* buf = dhead ? dhead : sockInfo.head + pos + 2;
 
     firstLine += header->method;

@@ -72,7 +72,7 @@ char* jsU8ArrayToChar(char* arr) {
     char** str;
     char* result;
 
-    size_t size = split(arr, str, ',');
+    ssize_t size = split(arr, str, ',');
     result = (char*)calloc(size, 1);
 
     for (int i = 0; i < size; i++) {
@@ -207,7 +207,7 @@ char* readFile(ifstream& inFile, ssize_t& len) {
 struct tm ASN1_GetTm(ASN1_TIME* time) {
     struct tm t;
     const char* str = (const char*)time->data;
-    size_t i = 0;
+    ssize_t i = 0;
 
     memset(&t, 0, sizeof(t));
 
@@ -267,7 +267,7 @@ char* findPidByPort(int pt) {
     //     regerror(status, r, error_message, 1000);
     //     printf("Regex error compiling '%s': %s\n", text, error_message);
     // }
-    size_t nmatch = 2; //可有有子匹配，$&，$1，$2，$3...，下标为0，1，2，3...
+    ssize_t nmatch = 2; //可有有子匹配，$&，$1，$2，$3...，下标为0，1，2，3...
     regmatch_t m[nmatch];
     char* p = text;
     char* line = NULL;
@@ -377,4 +377,55 @@ bool wildcardMatch(char* s, char* p) {
         }
     }
     return allStars(p, pIndex, len_p);
+}
+
+char* brotli_decompress(char* data, ssize_t datalen, ssize_t* destLen) {
+    char* result = NULL;
+    size_t decoded_size = datalen * 20;
+    unsigned char decoded_buf[decoded_size];
+    BrotliDecoderResult st = BrotliDecoderDecompress(datalen, (unsigned char*)data, &decoded_size, decoded_buf);
+    if (st == BROTLI_DECODER_RESULT_SUCCESS) {
+        *destLen = decoded_size;
+        result = (char*)calloc(decoded_size + 1, 1);
+        memcpy(result, decoded_buf, decoded_size);
+    }
+
+    return result;
+}
+
+char* zlib_decompress(char* data, ssize_t datalen, ssize_t* destLen, zip_type type) {
+    z_stream zs;                        // z_stream is zlib's control structure
+    memset(&zs, 0, sizeof(zs));
+    *destLen = 0;
+
+    int ret = inflateInit2(&zs, type);
+    if (ret != Z_OK) {
+        return NULL;
+    }
+
+    zs.next_in = (Bytef*)data;
+    zs.avail_in = datalen;
+
+    char outbuffer[32768];
+    char* result = NULL;
+    ssize_t size = 0;
+
+    do {
+        zs.next_out = reinterpret_cast<Bytef*>(outbuffer);
+        zs.avail_out = sizeof(outbuffer);
+        ret = inflate(&zs, 0);
+        if (size < zs.total_out) {
+            ssize_t num = zs.total_out - size;
+            ssize_t newSize = size + num;
+            result = (char*)realloc(result, newSize + 1);
+            result[newSize] = 0;
+            memcpy(result + size, outbuffer, zs.total_out - size);
+            size = newSize;
+        }
+    } while (ret == Z_OK);
+
+    inflateEnd(&zs);
+    *destLen = size;
+
+    return result;
 }
