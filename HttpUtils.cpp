@@ -1,7 +1,7 @@
 #include "HttpUtils.h"
-#include <string.h>
 
 extern SockContainer sockContainer;
+extern RuleUtils ruleUtils;
 extern WsUtils wsUtils;
 
 HttpUtils::HttpUtils() {
@@ -242,106 +242,6 @@ void HttpUtils::setHeaderKeyValue(HttpHeader* header, string head) {
             strcpy(header->authorization, val.c_str());
         }
     }
-}
-
-char* HttpUtils::replaceHeaderKeyVal(char* header, char* hkey, char* hval) {
-    string head = string(header);
-    ssize_t pos = head.npos, index = 0;
-    string line = "", key = "", val = "";
-    char* result = NULL;
-    char* tmp = NULL;
-    char* hkey_lw = to_lower(copyBuf(hkey));
-    int colonSize = 0;
-
-    while ((pos = head.find("\r\n")) != head.npos) {
-        line = head.substr(0, pos);
-        head = head.substr(pos + 2);
-        ssize_t colon = line.find(":");
-        if (colon == head.npos) {
-            break;
-        }
-        colonSize = line[colon + 1] == ' ' ? 2 : 1;
-        key = line.substr(0, colon);
-        key = to_lower(key);
-        val = line.substr(colon + colonSize);
-        if (key.compare(hkey_lw) == 0) {
-            ssize_t k_len = strlen(hkey), v_len = strlen(hval);
-            result = (char*)calloc(index + k_len + 2 + v_len + 2 + head.size() + 1, 1);
-            tmp = result;
-            memcpy(tmp, header, index);
-            tmp += index;
-            memcpy(tmp, hkey, k_len);
-            tmp += k_len;
-            tmp[0] = ':';
-            tmp[1] = ' ';
-            tmp += 2;
-            memcpy(tmp, hval, v_len);
-            tmp += v_len;
-            tmp[0] = '\r';
-            tmp[1] = '\n';
-            tmp += 2;
-            memcpy(tmp, head.c_str(), head.size());
-            break;
-        }
-        index += pos + 2;
-    }
-    free(hkey_lw);
-
-    return result;
-}
-
-char* HttpUtils::addHeaderKeyVal(char* header, char* hkey, char* hval) {
-    ssize_t k_len = strlen(hkey), v_len = strlen(hval), buf_len = strlen(header);
-    char* result = (char*)calloc(buf_len + k_len + 2 + v_len + 3, 1);
-    char* tmp = result;
-
-    memcpy(tmp, header, buf_len - 2);
-    tmp += buf_len - 2; // 尾部有空行\r\n
-    memcpy(tmp, hkey, k_len);
-    tmp += k_len;
-    tmp[0] = ':';
-    tmp[1] = ' ';
-    tmp += 2;
-    memcpy(tmp, hval, v_len);
-    tmp += v_len;
-    tmp[0] = '\r';
-    tmp[1] = '\n';
-    tmp[2] = '\r';
-    tmp[3] = '\n';
-
-    return result;
-}
-
-char* HttpUtils::delHeaderKeyVal(char* header, char* hkey) {
-    string head = string(header);
-    ssize_t pos = head.npos, index = 0;
-    string line = "", key = "", val = "";
-    char* result = NULL;
-    char* hkey_lw = to_lower(copyBuf(hkey));
-    int colonSize = 0;
-
-    while ((pos = head.find("\r\n")) != head.npos) {
-        line = head.substr(0, pos);
-        head = head.substr(pos + 2);
-        ssize_t colon = line.find(":");
-        if (colon == head.npos) {
-            break;
-        }
-        colonSize = line[colon + 1] == ' ' ? 2 : 1;
-        key = line.substr(0, colon);
-        key = to_lower(key);
-        val = line.substr(colon + colonSize);
-        if (key.compare(hkey_lw) == 0) {
-            result = (char*)calloc(index + head.size() + 1, 1);
-            memcpy(result, header, index);
-            memcpy(result + index, head.c_str(), head.size());
-            break;
-        }
-        index += pos + 2;
-    }
-    free(hkey_lw);
-
-    return result;
 }
 
 char* HttpUtils::getSecWebSocketAccept(SockInfo& sockInfo) {
@@ -795,10 +695,20 @@ bool HttpUtils::checkIfWebScoket(HttpHeader* header) {
     return header && header->status == 101 && header->upgrade && strcmp(header->upgrade, "websocket") == 0;
 }
 
-bool HttpUtils::checkIfResponsBody(HttpHeader* header, char* method) {
+bool HttpUtils::checkIfReqBody(HttpHeader* header) {
     string boundary = this->getBoundary(header);
 
-    if (strcmp(method, "HEAD") != 0 // HEAD请求没有响应体，即使有，也应该丢弃
+    if (header->contentLenth > 0 || boundary.size()) {
+        return true;
+    }
+
+    return false;
+}
+
+bool HttpUtils::checkIfResBody(HttpHeader* header, char* method) {
+    string boundary = this->getBoundary(header);
+
+    if ((!method || strcmp(method, "HEAD") != 0) // HEAD请求没有响应体，即使有，也应该丢弃
         && !(header->status >= 100 && header->status <= 199)
         && header->status != 204
         && header->status != 205
@@ -958,8 +868,6 @@ void HttpUtils::createReqData(SockInfo& sockInfo, char*& req, ssize_t& reqSize) 
     string head = sockInfo.head;
     HttpHeader* header = sockInfo.header;
     int pos = head.find("\r\n");
-    // char* dhead = this->addHeaderKeyVal(sockInfo.head + pos + 2, (char*)"lisong", (char*)"haha"); // 新增请求头
-    // char* dhead = this->delHeaderKeyVal(sockInfo.head + pos + 2, (char*)"accept-encoding"); // 取消压缩
     char* dhead = NULL;
     if (sockInfo.header->acceptEncoding) { // 解压暂时只支持 gzip、deflate、br
         string acceptEncoding = sockInfo.header->acceptEncoding;
@@ -974,7 +882,7 @@ void HttpUtils::createReqData(SockInfo& sockInfo, char*& req, ssize_t& reqSize) 
             encoding += "br, ";
         }
         encoding = encoding.substr(0, encoding.size() - 2);
-        dhead = this->replaceHeaderKeyVal(sockInfo.head + pos + 2, (char*)"accept-encoding", (char*)encoding.c_str()); // 替换请求头
+        dhead = ruleUtils.modHeader(sockInfo.head + pos + 2, (char*)"accept-encoding", (char*)encoding.c_str()); // 替换请求头
     }
     char* buf = dhead ? dhead : sockInfo.head + pos + 2;
 
@@ -985,7 +893,7 @@ void HttpUtils::createReqData(SockInfo& sockInfo, char*& req, ssize_t& reqSize) 
     firstLine += header->protocol;
     firstLine += "\r\n";
 
-    reqSize = firstLine.size() + strlen(dhead);
+    reqSize = firstLine.size() + strlen(buf);
     req = (char*)calloc(reqSize + 1, 1);
     memcpy(req, firstLine.c_str(), firstLine.size());
     memcpy(req + firstLine.size(), buf, strlen(buf));

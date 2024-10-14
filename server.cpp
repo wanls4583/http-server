@@ -11,7 +11,7 @@
 #include <openssl/bio.h>
 #include <pthread.h>
 #include <libproc.h>
-#include <regex>
+#include "nlohmann/json.hpp"
 #include "utils.h"
 #include "TlsUtils.h"
 #include "HttpUtils.h"
@@ -20,8 +20,10 @@
 #include "RuleUtils.h"
 #include "LevelUtils.h"
 #include "DataUtils.h"
+#include <regex>
 
 using namespace std;
+using json = nlohmann::json;
 
 static int proxyPort = 8000;
 static int servSock;
@@ -46,9 +48,15 @@ void* initClntSock(void* arg);
 int initRemoteSock(SockInfo& sockInfo);
 int checkApi(SockInfo& sockInfo);
 void getClientPath(SockInfo& sockInfo);
-ssize_t getChunkSize(SockInfo& sockInfo, ssize_t& numSize);
+ssize_t getChunkSize(char* buf, ssize_t bufSize, ssize_t& numSize);
+string getUnChunkData(SockInfo& sockInfo);
+string createChunkData(string body, char* bodyTrailer);
+void replaceHead(SockInfo& sockInfo, char* header);
+void replaceBody(SockInfo& sockInfo, char* body);
+void resetHead(SockInfo& sockInfo, string head);
+void resetBody(SockInfo& sockInfo, string body);
 int reciveBody(SockInfo& sockInfo, bool ifWrite = true);
-int checkRule(SockInfo& sockInfo);
+int checkRule(SockInfo& sockInfo, ruleType type, ruleMethodType methodType);
 int forward(SockInfo& sockInfo);
 void* forwardWebocket(void* arg);
 int initLocalWebscoket(SockInfo& sockInfo, int type);
@@ -69,6 +77,10 @@ int main() {
     if (servSock < 0) {
         return -1;
     }
+
+    ssize_t size = 0;
+    char* ruleStr = dataUtils.getData(DATA_TYPE_RULE, 0, size);
+    ruleUtils.parseRule(ruleStr);
 
     while (1) {
         struct sockaddr_in clntAddr;
@@ -229,14 +241,6 @@ void* initClntSock(void* arg) {
         sockInfo.isNoCheckSSL = 0; // CONNECT请求使用的是http协议，用来为https的代理建立连接，下一次请求才是真正的tls握手请求
         initClntSock(arg);
     } else if (httpUtils.checkMethod(sockInfo.header->method)) {
-        int checkReulst = checkRule(sockInfo);
-        if (checkReulst == 1) {
-            initClntSock(arg);
-            return NULL;
-        } else if (checkReulst == 0) {
-            sockContainer.shutdownSock();
-            return NULL;
-        }
         if (sockInfo.header->port == proxyPort) { // 本地访问代理设置页面
             cout << sockInfo.header->path << endl;
             // wbscoket升级请求，ws/wss：
@@ -269,12 +273,15 @@ void* initClntSock(void* arg) {
                 return NULL;
             } else if (!strncmp(sockInfo.header->path, "/api", strlen("/api"))) { // 本地ajax请求
                 if (!checkApi(sockInfo)) {
+                    sockContainer.shutdownSock();
                     return NULL;
                 }
             } else {
                 httpUtils.sendFile(sockInfo);
             }
         } else if (sockInfo.isProxy) { // 客户端代理转发请求
+            checkRule(sockInfo, RULE_REQ, RULE_METHOD_HEAD); // 拦截请求头
+
             char* req;
             ssize_t reqSize;
             httpUtils.createReqData(sockInfo, req, reqSize);
@@ -462,8 +469,7 @@ int initRemoteSock(SockInfo& sockInfo) {
 
 int checkApi(SockInfo& sockInfo) {
     char* api = sockInfo.header->path + strlen("/api");
-    string boundary = httpUtils.getBoundary(sockInfo.header);
-    if (sockInfo.header->contentLenth > 0 || boundary.size()) {
+    if (httpUtils.checkIfReqBody(sockInfo.header)) {
         if (!reciveBody(sockInfo, false)) { // 读取客户端请求体
             return 0;
         }
@@ -527,8 +533,12 @@ int checkApi(SockInfo& sockInfo) {
 
         if (!strncmp(type, "/rule", strlen("/rule"))) {
             dataUtils.saveData(sockInfo.body, sockInfo.bodySize, DATA_TYPE_RULE);
+            ruleUtils.parseRule(sockInfo.body);
         } else if (!strncmp(type, "/clear", strlen("/clear"))) {
             tempLevelUtils.clear();
+        } else if (!strncmp(type, "/breakpoint", strlen("/breakpoint"))) {
+            u_int64_t reqId = stoull(type + strlen("/breakpoint") + 1);
+            ruleUtils.broadcast(reqId, sockInfo.body, sockInfo.bodySize);
         }
         httpUtils.sendJson(sockInfo, NULL, 0, contentType);
     } else {
@@ -586,10 +596,6 @@ int initLocalWebscoket(SockInfo& sockInfo, int type) {
                     result = wsUtils.sendMsg(sockInfo, (unsigned char*)"start", 5);
                 } else if (strcmp(msg, "ping") == 0) {
                     result = wsUtils.sendMsg(sockInfo, (unsigned char*)"pong", 4);
-                } else if (strncmp(msg, "rule-check:", 11) == 0) {
-                    ruleUtils.reciveData(msg + 11, msgLen - 11);
-                } else if (strncmp(msg, "rule-parse:", 11) == 0) {
-                    ruleUtils.parseRule(msg + 11, msgLen - 11);
                 }
                 free(msg);
                 if (READ_ERROR == result) {
@@ -740,27 +746,136 @@ void getClientPath(SockInfo& sockInfo) {
     }
 }
 
-ssize_t getChunkSize(SockInfo& sockInfo, ssize_t& numSize) {
+ssize_t getChunkSize(char* buf, ssize_t bufSize, ssize_t& numSize) {
     string num = "";
     ssize_t i = 0;
-    while (sockInfo.buf[i] >= '0' && sockInfo.buf[i] <= '9' ||
-        sockInfo.buf[i] >= 'a' && sockInfo.buf[i] <= 'z' ||
-        sockInfo.buf[i] >= 'A' && sockInfo.buf[i] <= 'Z') {
-        num += sockInfo.buf[i];
+    while (buf[i] >= '0' && buf[i] <= '9' ||
+        buf[i] >= 'a' && buf[i] <= 'z' ||
+        buf[i] >= 'A' && buf[i] <= 'Z') {
+        num += buf[i];
         i++;
     }
     if (i == 0) { // 数据错误
         return -2;
     }
-    if (sockInfo.bufSize < i + 2) { // 待接收数据
+    if (bufSize < i + 2) { // 待接收数据
         return -1;
     }
-    if (sockInfo.buf[i] != '\r' || sockInfo.buf[i + 1] != '\n') { // 数据错误
+    if (buf[i] != '\r' || buf[i + 1] != '\n') { // 数据错误
         return -2;
     }
     numSize = i + 2;
 
     return stol(num, NULL, 16);
+}
+
+string getUnChunkData(SockInfo& sockInfo) {
+    ssize_t index = 0, preIndex = 0, chunkSize = 0;
+    string body = "";
+    if (sockInfo.header->transferEncoding && !string(sockInfo.header->transferEncoding).compare("chunked")) {
+        while ((chunkSize = getChunkSize(sockInfo.body + preIndex, sockInfo.bodySize - preIndex, index)) > 0) { // 解块
+            preIndex += index;
+            body.append(sockInfo.body + preIndex, chunkSize);
+            preIndex += chunkSize + 2;
+        }
+        if (chunkSize == 0) {
+            preIndex += index;
+            if (preIndex + 2 < sockInfo.bodySize) {
+                chunkSize = sockInfo.bodySize - preIndex;
+                sockInfo.bodyTrailer = copyBuf(sockInfo.body + preIndex, chunkSize);
+                sockInfo.bodyTrailerSize = chunkSize;
+            }
+        }
+    } else {
+        body = string(sockInfo.body, sockInfo.bodySize);
+    }
+
+    if (body.size() && sockInfo.header->contentEncoding) { // 解压缩
+        ssize_t decoded_size = 0;
+        char* decoded_buf = NULL;
+        if (!strcmp(sockInfo.header->contentEncoding, "br")) {
+            decoded_buf = brotli_decompress((char*)body.c_str(), body.size(), &decoded_size);
+        } else if (!strcmp(sockInfo.header->contentEncoding, "gzip")) {
+            decoded_buf = zlib_decompress((char*)body.c_str(), body.size(), &decoded_size, E_ZIP_GZIP);
+        } else if (!strcmp(sockInfo.header->contentEncoding, "deflate")) {
+            decoded_buf = zlib_decompress((char*)body.c_str(), body.size(), &decoded_size, E_ZIP_RAW);
+        }
+        if (decoded_size > 0) {
+            body = string(decoded_buf, decoded_size);
+        }
+    }
+
+    return body;
+}
+
+string createChunkData(string body, char* bodyTrailer) {
+    ssize_t chunkLimit = 1024 * 100; //500k
+    ssize_t count = 0;
+    string result = "";
+
+    while (count < body.size()) {
+        ssize_t chunkSize = body.size() - count;
+        chunkSize = chunkSize > chunkLimit ? chunkLimit : chunkSize;
+        ostringstream ss;
+        ss << std::hex << chunkSize;
+        result += ss.str();
+        result += "\r\n";
+        result.append(body.substr(count, chunkSize));
+        result += "\r\n";
+        count += chunkSize;
+    }
+    result += "0\r\n";
+    if (bodyTrailer) {
+        result.append(bodyTrailer);
+    } else {
+        result += "\r\n";
+    }
+
+    return result;
+}
+
+void replaceHead(SockInfo& sockInfo, char* header) {
+    free(sockInfo.head);
+    sockInfo.head = copyBuf(header);
+    sockInfo.headSize = strlen(header);
+}
+
+void replaceBody(SockInfo& sockInfo, char* body) {
+    free(sockInfo.body);
+    sockInfo.body = copyBuf(body);
+    sockInfo.bodySize = strlen(body);
+}
+
+void resetHead(SockInfo& sockInfo, string head) {
+    string buf = sockInfo.buf ? string(sockInfo.buf, sockInfo.bufSize) : "";
+
+    free(sockInfo.head);
+    sockInfo.headSize = 0;
+    sockInfo.head = NULL;
+
+    free(sockInfo.buf);
+    sockInfo.bufSize = 0;
+    sockInfo.buf = NULL;
+
+    buf += head;
+    sockInfo.buf = copyBuf(buf.c_str(), buf.size());
+    sockInfo.bufSize = buf.size();
+}
+
+void resetBody(SockInfo& sockInfo, string body) {
+    string buf = sockInfo.buf ? string(sockInfo.buf, sockInfo.bufSize) : "";
+
+    free(sockInfo.body);
+    sockInfo.bodySize = 0;
+    sockInfo.body = NULL;
+
+    free(sockInfo.buf);
+    sockInfo.bufSize = 0;
+    sockInfo.buf = NULL;
+
+    buf += createChunkData(body, sockInfo.bodyTrailer);
+    sockInfo.buf = copyBuf(buf.c_str(), buf.size());
+    sockInfo.bufSize = buf.size();
 }
 
 int reciveBody(SockInfo& sockInfo, bool ifWrite) {
@@ -796,7 +911,7 @@ int reciveBody(SockInfo& sockInfo, bool ifWrite) {
             }
         }
         if (isChunk) {
-            chunkSize = chunkSize == -1 ? getChunkSize(sockInfo, numSize) : chunkSize;
+            chunkSize = chunkSize == -1 ? getChunkSize(sockInfo.buf, sockInfo.bufSize, numSize) : chunkSize;
             if (chunkSize == -2) { // 数据错误
                 return 0;
             } else if (chunkSize == -1) { // 待接收数据用来解析chunk大小
@@ -889,83 +1004,179 @@ int reciveBody(SockInfo& sockInfo, bool ifWrite) {
     return 1;
 }
 
-int checkRule(SockInfo& sockInfo) { // 1:检测成功 -1:无需检测 0:检测出错
-    int hasError = 0;
-    int flag = 0;
+int checkRule(SockInfo& sockInfo, ruleType type, ruleMethodType methodType) {
+    int bodyWay = -1;
+    bool headChanged = false, bodyChanged = false, bodyRecived = false;
+    bool isRemote = sockInfo.localSockInfo ? true : false;
+    char* method = sockInfo.localSockInfo ? sockInfo.localSockInfo->header->method : sockInfo.header->method;
+    char* head = NULL;
+    string body = "";
+    string originUnChunkData = "";
+    RuleNode* node = ruleUtils.ruleList;
 
-    if (!sockContainer.ruleScokInfo || SOCK_STATE_CLOSED == sockContainer.ruleScokInfo->state || sockInfo.ruleState) {
-        return -1;
-    }
+    while (node) {
+        char* url = isRemote ? sockInfo.localSockInfo->header->url : sockInfo.header->url;
+        if (wildcardMatch(url, (char*)node->url.c_str())) {
+            if (node->type == type && node->methodType == methodType) {
+                string unChunkData = "";
+                string ruleStr = "";
+                string ruleBuf = "";
+                ssize_t ruleBufSize = 0;
+                head = NULL;
+                switch (node->method) {
+                case MODIFY_PARAM_ADD: // 新增参数
+                    head = ruleUtils.addParam(sockInfo.head, (char*)node->key.c_str(), (char*)node->value.c_str());
+                    break;
+                case MODIFY_PARAM_MOD: // 修改参数
+                    head = ruleUtils.modParam(sockInfo.head, (char*)node->key.c_str(), (char*)node->value.c_str(), node->enableReg, node->icase);
+                    break;
+                case MODIFY_PARAM_DEL: // 删除参数
+                    head = ruleUtils.delParam(sockInfo.head, (char*)node->key.c_str(), node->enableReg, node->icase);
+                    break;
+                case MODIFY_HEADER_ADD: // 新增首部
+                    head = ruleUtils.addHeader(sockInfo.head, (char*)node->key.c_str(), (char*)node->value.c_str());
+                    break;
+                case MODIFY_HEADER_MOD: // 修改首部
+                    head = ruleUtils.modHeader(sockInfo.head, (char*)node->key.c_str(), (char*)node->value.c_str(), node->enableReg, node->icase);
+                    break;
+                case MODIFY_HEADER_DEL: // 删除首部
+                    head = ruleUtils.delHeader(sockInfo.head, (char*)node->key.c_str(), node->enableReg, node->icase);
+                    break;
+                case MODIFY_BODY_MOD: // 实体修改
+                case MODIFY_BODY_REP: // 实体替换
+                    if (RULE_REQ == type && httpUtils.checkIfReqBody(sockInfo.header) ||
+                        RULE_RES == type && httpUtils.checkIfResBody(sockInfo.header, method)) {
+                        if (!bodyRecived && !reciveBody(sockInfo, false)) {
+                            return 0;
+                        }
+                        unChunkData = bodyChanged ? body : (bodyRecived ? originUnChunkData : getUnChunkData(sockInfo));
+                        if (!bodyRecived) {
+                            originUnChunkData = unChunkData;
+                        }
+                        bodyRecived = true;
+                        if (MODIFY_BODY_MOD == node->method) {
+                            body = ruleUtils.modBody(unChunkData, node->key, node->value, node->enableReg);
+                            headChanged = true; // 提前修改过Transfer-Encoding等首部
+                            bodyChanged = true;
+                        }
+                    }
+                    if (MODIFY_BODY_REP == node->method) {
+                        body = node->value;
+                        headChanged = true; // 提前修改过Transfer-Encoding等首部
+                        bodyChanged = true;
+                    }
+                    break;
+                case BREAK_POINT: // 断点执行
+                    if (RULE_METHOD_HEAD == node->methodType) {
+                        ruleBuf = string(sockInfo.head, sockInfo.headSize);
+                        ruleBufSize = sockInfo.headSize;
+                    } else {
+                        if (RULE_REQ == type && httpUtils.checkIfReqBody(sockInfo.header) ||
+                            RULE_RES == type && httpUtils.checkIfResBody(sockInfo.header, method)) {
+                            if (!bodyRecived && !reciveBody(sockInfo, false)) {
+                                return 0;
+                            }
+                            unChunkData = bodyChanged ? body : (bodyRecived ? originUnChunkData : getUnChunkData(sockInfo));
+                            if (!bodyRecived) {
+                                originUnChunkData = unChunkData;
+                            }
+                            bodyRecived = true;
+                            replaceBody(sockInfo, (char*)unChunkData.c_str());
+                        }
+                        ruleBuf = string(sockInfo.body, sockInfo.bodySize);
+                        ruleBufSize = sockInfo.bodySize;
+                    }
 
-    RuleNode* ruleNode = ruleUtils.findRule(&sockInfo);
+                    sockInfo.ruleState = 1;
+                    ruleStr = "";
+                    ruleStr += node->method;
+                    ruleStr += node->methodType;
+                    ruleStr.append(ruleBuf);
 
-    if (ruleNode) {
-        if (sockInfo.localSockInfo) {
-            flag = ruleNode->resFlag;
-        } else {
-            flag = ruleNode->reqFlag;
-        }
-    }
+                    sendRecordToLacal(
+                        sockInfo.localSockInfo ? *sockInfo.localSockInfo : sockInfo,
+                        sockContainer.proxyScokInfo,
+                        MSG_RULE,
+                        (char*)ruleStr.c_str(), ruleStr.size()
+                    );
 
-    if (ruleNode && flag) {
-        char* buf = NULL;
-        bool hasBody = false;
-        sockInfo.ruleState = 1;
-        if (sockInfo.localSockInfo) {
-            HttpHeader* header = httpUtils.reciveHeader(sockInfo, hasError); // 读取服务器请求头
-            hasBody = httpUtils.checkIfResponsBody(header, sockInfo.localSockInfo->header->method);
-        } else {
-            string boundary = httpUtils.getBoundary(sockInfo.header);
-            hasBody = sockInfo.header->contentLenth > 0 || boundary.size() > 0;
-        }
-        if (flag == 2 && hasBody) {
-            if (!reciveBody(sockInfo, false)) { // 读取实体
-                return 0;
+                    if (sockInfo.localSockInfo) {
+                        pthread_cond_wait(&sockInfo.localSockInfo->cond, &sockInfo.localSockInfo->mutex);
+                    } else {
+                        pthread_cond_wait(&sockInfo.cond, &sockInfo.mutex);
+                    }
+
+                    sockInfo.ruleState = 2;
+                    ruleStr = sockInfo.ruleBuf ? string(sockInfo.ruleBuf, sockInfo.ruleBufSize) : "";
+                    free(sockInfo.ruleBuf);
+                    sockInfo.ruleBuf = NULL;
+                    sockInfo.ruleBufSize = 0;
+
+                    if (RULE_METHOD_HEAD == node->methodType) {
+                        headChanged = true;
+                        head = copyBuf(ruleStr.c_str());
+                    } else {
+                        body = ruleStr;
+                        headChanged = true; // 提前修改过Transfer-Encoding等首部
+                        bodyChanged = true;
+                    }
+                    break;
+                default:
+                    break;
+                }
+                if (head) {
+                    headChanged = true;
+                    replaceHead(sockInfo, head);
+                    free(head);
+                }
+            } else if (node->type == type && RULE_METHOD_BODY == node->methodType) {
+                bodyWay = node->method;
             }
-            buf = (char*)calloc(sockInfo.headSize + sockInfo.bodySize, 1);
-            memcpy(buf, sockInfo.head, sockInfo.headSize);
-            memcpy(buf + sockInfo.headSize, sockInfo.body, sockInfo.bodySize);
-            sendRecordToLacal(
-                sockInfo.localSockInfo ? *sockInfo.localSockInfo : sockInfo,
-                sockContainer.ruleScokInfo,
-                sockInfo.localSockInfo ? MSG_RES_HEAD : MSG_REQ_HEAD,
-                buf, sockInfo.headSize + sockInfo.bodySize
-            );
-        } else {
-            buf = (char*)calloc(sockInfo.headSize, 1);
-            memcpy(buf, sockInfo.head, sockInfo.headSize);
-            sendRecordToLacal(
-                sockInfo.localSockInfo ? *sockInfo.localSockInfo : sockInfo,
-                sockContainer.ruleScokInfo,
-                sockInfo.localSockInfo ? MSG_RES_HEAD : MSG_REQ_HEAD,
-                buf, sockInfo.headSize
-            );
         }
-
-        cout << "checkRule:" << sockInfo.reqId << endl;
-        if (sockInfo.localSockInfo) {
-            pthread_cond_wait(&sockInfo.localSockInfo->cond, &sockInfo.localSockInfo->mutex);
-        } else {
-            pthread_cond_wait(&sockInfo.cond, &sockInfo.mutex);
-        }
-
-        sockContainer.resetSockInfoData(sockInfo);
-        free(sockInfo.buf);
-        sockInfo.buf = sockInfo.ruleBuf; // 处理完的buf
-        sockInfo.bufSize = sockInfo.ruleBufSize;
-        sockInfo.ruleBuf = NULL;
-        sockInfo.ruleBufSize = 0;
-        sockInfo.ruleState = 2;
-        return 1;
+        node = node->next;
     }
 
-    return -1;
+    if (headChanged) {
+        sockContainer.freeHeader(sockInfo.header);
+        if (RULE_REQ == type) {
+            sockInfo.header = httpUtils.getHttpReqHeader(sockInfo);
+        } else {
+            sockInfo.header = httpUtils.getHttpResHeader(sockInfo);
+        }
+    }
+
+    if (bodyChanged) {
+        resetBody(sockInfo, body);
+    }
+
+    if (MODIFY_BODY_REP == bodyWay || MODIFY_BODY_MOD == bodyWay && (
+        RULE_REQ == type && httpUtils.checkIfReqBody(sockInfo.header) ||
+        RULE_RES == type && httpUtils.checkIfResBody(sockInfo.header, method)
+        )) { // 提前修改Transfer-Encoding等首部，确保实体被浏览器正确被接收
+        head = ruleUtils.delHeader(sockInfo.head, (char*)"content-length");
+        if (head) {
+            replaceHead(sockInfo, head);
+        }
+        head = ruleUtils.delHeader(sockInfo.head, (char*)"content-encoding");
+        if (head) {
+            replaceHead(sockInfo, head);
+        }
+        head = ruleUtils.delHeader(sockInfo.head, (char*)"transfer-encoding");
+        if (head) {
+            replaceHead(sockInfo, head);
+        }
+        head = ruleUtils.addHeader(sockInfo.head, (char*)"Transfer-Encoding", (char*)"chunked");
+        if (head) {
+            replaceHead(sockInfo, head);
+        }
+    }
+
+    return 1;
 }
 
 int forward(SockInfo& sockInfo) { // 转发http/https请求
     SockInfo& remoteSockInfo = *sockInfo.remoteSockInfo;
     HttpHeader* header = sockInfo.header;
-    string boundary = "";
     char* req = NULL;
     int hasError = 0;
     ssize_t reqSize = 0;
@@ -978,8 +1189,10 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
     if (READ_ERROR == result || READ_END == result) {
         return 0;
     }
-    boundary = httpUtils.getBoundary(header);
-    if (header->contentLenth > 0 || boundary.size()) {
+
+    checkRule(sockInfo, RULE_REQ, RULE_METHOD_BODY); // 拦截请求体
+
+    if (httpUtils.checkIfReqBody(sockInfo.header)) {
         if (!reciveBody(sockInfo)) { // 读取和转发客户端请求体
             return 0;
         }
@@ -988,15 +1201,12 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
 
     httpUtils.waiteData(*sockInfo.remoteSockInfo);
     sendTimeToLacal(sockInfo, TIME_RES_START); // response-begin
-
-    if (!checkRule(*sockInfo.remoteSockInfo)) {
-        return 0;
-    }
-
     header = httpUtils.reciveHeader(*sockInfo.remoteSockInfo, hasError); // 读取远程服务器的响应头
     if (hasError) {
         return 0;
     }
+
+    checkRule(*sockInfo.remoteSockInfo, RULE_RES, RULE_METHOD_HEAD); // 拦截响应头
 
     char* data = (char*)calloc(remoteSockInfo.headSize, 1);
     memcpy(data, remoteSockInfo.head, remoteSockInfo.headSize);
@@ -1021,7 +1231,9 @@ int forward(SockInfo& sockInfo) { // 转发http/https请求
         return 0;
     }
 
-    if (httpUtils.checkIfResponsBody(header, sockInfo.header->method)) {
+    checkRule(*sockInfo.remoteSockInfo, RULE_RES, RULE_METHOD_BODY); // 拦截响应体
+
+    if (httpUtils.checkIfResBody(header, sockInfo.header->method)) {
         if (!reciveBody(*sockInfo.remoteSockInfo)) { // 读取和转发服务端响应体
             return 0;
         }

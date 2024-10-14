@@ -30,10 +30,11 @@ char* to_upper(char* s);
 string to_lower(string s);
 string to_upper(string s);
 int split(const string& s, char**& strs, const char delim);
+void freeStrList(char** strs, int size);
 char* jsU8ArrayToChar(char* arr);
 int* getLink(const char* p, ssize_t pSize);
 int kmpStrstr(const char* s, const char* p, ssize_t sSize, ssize_t pSize, ssize_t start = 0);
-char* copyBuf(const char* str);
+char* copyBuf(const char* str, ssize_t size = 0);
 char* sliceBuf(const char* str, ssize_t start, ssize_t end);
 char* runCmd(const char* strCmd);
 void removeDir(const char* dir);
@@ -43,5 +44,7 @@ char* findPidByPort(int port);
 bool wildcardMatch(char* s, char* p);
 char* brotli_decompress(char* data, ssize_t datalen, ssize_t* destLen);
 char* zlib_decompress(char* data, ssize_t datalen, ssize_t* destLen, zip_type type);
+wstring stringToWstring(const string& str);
+string wstringToString(const wstring& wstr);
 
 #endif

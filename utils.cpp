@@ -1,5 +1,6 @@
 #include "utils.h"
 #include "regex.h"
+#include <boost/locale.hpp>
 
 extern pthread_mutex_t cmdMutex;
 
@@ -51,6 +52,9 @@ int split(const string& s, char**& strs, const char delim = ' ') {
     while (getline(iss, temp, delim)) {
         sv.emplace_back(temp);
     }
+    if (s.back() == delim) {
+        sv.emplace_back("");
+    }
 
     int size = sv.size();
 
@@ -66,6 +70,13 @@ int split(const string& s, char**& strs, const char delim = ' ') {
     }
 
     return size;
+}
+
+void freeStrList(char** strs, int size) {
+    for (int i = 0; i < size; i++) {
+        free(strs[i]);
+    }
+    free(strs);
 }
 
 char* jsU8ArrayToChar(char* arr) {
@@ -128,10 +139,14 @@ int kmpStrstr(const char* s, const char* p, ssize_t sSize, ssize_t pSize, ssize_
     return -1;
 }
 
-char* copyBuf(const char* str) {
-    if (str && strlen(str)) {
-        char* s = (char*)calloc(strlen(str) + 1, 1);
-        strcpy(s, str);
+char* copyBuf(const char* str, ssize_t size) {
+    if (!str) {
+        return NULL;
+    }
+    size = size ? size : strlen(str);
+    if (str && size) {
+        char* s = (char*)calloc(size + 1, 1);
+        memcpy(s, str, size);
         return s;
     }
     return NULL;
@@ -427,5 +442,15 @@ char* zlib_decompress(char* data, ssize_t datalen, ssize_t* destLen, zip_type ty
     inflateEnd(&zs);
     *destLen = size;
 
+    return result;
+}
+
+wstring stringToWstring(const string& str) {
+    wstring result = boost::locale::conv::utf_to_utf<wchar_t>(str);
+    return result;
+}
+
+string wstringToString(const wstring& wstr) {
+    string result = boost::locale::conv::utf_to_utf<char>(wstr);
     return result;
 }

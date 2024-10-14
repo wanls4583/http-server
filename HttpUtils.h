@@ -5,10 +5,13 @@
 #include <climits>
 #include <sys/stat.h>
 #include "SockContainer.h"
+#include "RuleUtils.h"
 #include "WsUtils.h"
 #include "utils.h"
+#include "nlohmann/json.hpp"
 
 using namespace std;
+using json = nlohmann::json;
 
 #define READ_AGAIN LONG_MAX
 #define READ_END 0
@@ -17,8 +20,6 @@ class HttpUtils {
 private:
     int cpuTime;
     int endTryTimes;
-    HttpHeader* getHttpReqHeader(SockInfo& sockInfo);
-    HttpHeader* getHttpResHeader(SockInfo& sockInfo);
     void setHeaderKeyValue(HttpHeader* header, string head);
     ssize_t preReadData(SockInfo& sockInfo, char* buf, ssize_t length);
     ssize_t readData(SockInfo& sockInfo, char* buf, ssize_t length);
@@ -26,10 +27,9 @@ private:
 public:
     HttpUtils();
     ~HttpUtils();
+    HttpHeader* getHttpReqHeader(SockInfo& sockInfo);
+    HttpHeader* getHttpResHeader(SockInfo& sockInfo);
     int checkMethod(const char* method);
-    char* replaceHeaderKeyVal(char* header, char* prop, char* val);
-    char* addHeaderKeyVal(char* header, char* hkey, char* hval);
-    char* delHeaderKeyVal(char* header, char* hkey);
     char* getSecWebSocketAccept(SockInfo& sockInfo);
     string getBoundary(HttpHeader* header);
     void preReciveHeader(SockInfo& sockInfo, int& hasError);
@@ -42,7 +42,8 @@ public:
     ssize_t writeData(SockInfo& sockInfo, char* buf, ssize_t length);
     void checkError(SockInfo& sockInfo, ssize_t& bufSize, int& hasError);
     bool checkIfWebScoket(HttpHeader* header);
-    bool checkIfResponsBody(HttpHeader* header, char* method);
+    bool checkIfReqBody(HttpHeader* header);
+    bool checkIfResBody(HttpHeader* header, char* method);
     ssize_t sendOptionsOk(SockInfo& sockInfo);
     ssize_t sendTunnelOk(SockInfo& sockInfo);
     ssize_t sendUpgradeOk(SockInfo& sockInfo);

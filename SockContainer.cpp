@@ -97,14 +97,11 @@ void SockContainer::_resetSockInfo(SockInfo& sockInfo) {
     sockInfo.port = 0;
 
     sockInfo.bufSize = 0;
-    sockInfo.ruleBufSize = 0;
 
     free(sockInfo.ip);
     sockInfo.ip = NULL;
     free(sockInfo.buf);
     sockInfo.buf = NULL;
-    free(sockInfo.ruleBuf);
-    sockInfo.ruleBuf = NULL;
     free(sockInfo.cipher);
     sockInfo.cipher = NULL;
     free(sockInfo.pem_cert);
@@ -137,10 +134,12 @@ void SockContainer::resetSockInfoData(SockInfo& sockInfo) {
         sockInfo.buf = NULL;
     }
 
+    sockInfo.ruleState = 0;
+
     sockInfo.headSize = 0;
     sockInfo.bodySize = 0;
-    sockInfo.bodyIndex = 0;
-    sockInfo.ruleState = 0;
+    sockInfo.bodyTrailerSize = 0;
+    sockInfo.ruleBufSize = 0;
 
     free(sockInfo.tlsHeader);
     sockInfo.tlsHeader = NULL;
@@ -150,6 +149,10 @@ void SockContainer::resetSockInfoData(SockInfo& sockInfo) {
     sockInfo.head = NULL;
     free(sockInfo.body);
     sockInfo.body = NULL;
+    free(sockInfo.bodyTrailer);
+    sockInfo.bodyTrailer = NULL;
+    free(sockInfo.ruleBuf);
+    sockInfo.ruleBuf = NULL;
     wsUtils.freeFragment(sockInfo.wsFragment);
     sockInfo.wsFragment = NULL;
 }
@@ -200,10 +203,6 @@ void SockContainer::shutdownSock(SockInfo* sockInfo) {
     }
 
     sockInfo->state = SOCK_STATE_CLOSED; // 已关闭
-
-    if (sockContainer.ruleScokInfo == sockInfo) {
-        ruleUtils.broadcastAll();
-    }
 }
 
 void SockContainer::closeSock(SockInfo& sockInfo) {
