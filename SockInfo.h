@@ -35,13 +35,14 @@ typedef struct SockInfo {
     ssize_t ruleBufSize;
     ssize_t headSize;
     ssize_t bodySize;
-    ssize_t bodyIndex;
+    ssize_t bodyTrailerSize;
 
     char* ip;
     char* tlsHeader;
     char* socksHeader;
     char* head;
     char* body;
+    char* bodyTrailer;
     char* buf; // 未处理的buf
     char* ruleBuf; // 被修改的bug
     char* cipher;

@@ -128,10 +128,14 @@ int kmpStrstr(const char* s, const char* p, ssize_t sSize, ssize_t pSize, ssize_
     return -1;
 }
 
-char* copyBuf(const char* str) {
-    if (str && strlen(str)) {
-        char* s = (char*)calloc(strlen(str) + 1, 1);
-        strcpy(s, str);
+char* copyBuf(const char* str, ssize_t size) {
+    if (!str) {
+        return NULL;
+    }
+    size = size ? size : strlen(str);
+    if (str && size) {
+        char* s = (char*)calloc(size + 1, 1);
+        memcpy(s, str, size);
         return s;
     }
     return NULL;

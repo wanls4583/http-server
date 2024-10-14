@@ -15,6 +15,7 @@
                 "-I/opt/homebrew/Cellar/leveldb/1.23_1/include",
                 "-L/opt/homebrew/Cellar/brotli/1.1.0/lib",
                 "-I/opt/homebrew/Cellar/brotli/1.1.0/include",
+                "-I/opt/homebrew/Cellar/nlohmann-json/3.11.3/include",
                 "-lssl",
                 "-lcrypto",
                 "-lv8",
