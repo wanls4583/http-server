@@ -5,10 +5,13 @@
 #include <climits>
 #include <sys/stat.h>
 #include "SockContainer.h"
+#include "RuleUtils.h"
 #include "WsUtils.h"
 #include "utils.h"
+#include "nlohmann/json.hpp"
 
 using namespace std;
+using json = nlohmann::json;
 
 #define READ_AGAIN LONG_MAX
 #define READ_END 0
@@ -27,9 +30,6 @@ public:
     HttpUtils();
     ~HttpUtils();
     int checkMethod(const char* method);
-    char* replaceHeaderKeyVal(char* header, char* prop, char* val);
-    char* addHeaderKeyVal(char* header, char* hkey, char* hval);
-    char* delHeaderKeyVal(char* header, char* hkey);
     char* getSecWebSocketAccept(SockInfo& sockInfo);
     string getBoundary(HttpHeader* header);
     void preReciveHeader(SockInfo& sockInfo, int& hasError);

@@ -33,7 +33,7 @@ int split(const string& s, char**& strs, const char delim);
 char* jsU8ArrayToChar(char* arr);
 int* getLink(const char* p, ssize_t pSize);
 int kmpStrstr(const char* s, const char* p, ssize_t sSize, ssize_t pSize, ssize_t start = 0);
-char* copyBuf(const char* str);
+char* copyBuf(const char* str, ssize_t size = 0);
 char* sliceBuf(const char* str, ssize_t start, ssize_t end);
 char* runCmd(const char* strCmd);
 void removeDir(const char* dir);
