@@ -29,14 +29,23 @@ typedef struct RuleNode {
   RuleNode* next;
 } RuleNode;
 
+typedef struct BreakPoint {
+  ruleType type;
+  string url;
+  BreakPoint* next;
+} BreakPoint;
+
 class RuleUtils {
 private:
 public:
   RuleUtils();
   ~RuleUtils();
   RuleNode* ruleList;
+  BreakPoint* breakpintList;
   void clearRule();
+  void clearBreakPoint();
   void parseRule(char* data);
+  void parseBreakpint(char* data);
   void broadcast(u_int64_t reqId, char* data, u_int64_t dataLen);
   void broadcastAll();
   char* addParam(char* header, char* key, char* value);
@@ -46,5 +55,6 @@ public:
   char* modHeader(char* header, char* hkey, char* hval, bool isRegex = false, bool icase = true);
   char* delHeader(char* header, char* hkey, bool isRegex = false, bool icase = true);
   string modBody(string body, string key, string val, bool isRegex = false, bool icase = false);
+  bool ifHasHeader(string head, string header);
 };
 #endif

@@ -13,6 +13,8 @@ extern SockContainer sockContainer;
 extern const int MAX_SOCK;
 
 RuleUtils::RuleUtils() {
+  this->ruleList = NULL;
+  this->breakpintList = NULL;
 }
 
 RuleUtils::~RuleUtils() {
@@ -29,6 +31,19 @@ void RuleUtils::clearRule() {
   }
 
   this->ruleList = NULL;
+}
+
+void RuleUtils::clearBreakPoint() {
+  BreakPoint* node = this->breakpintList;
+  BreakPoint* next = NULL;
+
+  while (node) {
+    next = node->next;
+    free(node);
+    node = next;
+  }
+
+  this->breakpintList = NULL;
 }
 
 void RuleUtils::parseRule(char* data) {
@@ -113,6 +128,46 @@ void RuleUtils::parseRule(char* data) {
         head = node;
       } else {
         this->ruleList = node;
+        head = node;
+      }
+    }
+  }
+}
+
+void RuleUtils::parseBreakpint(char* data) {
+  this->clearBreakPoint();
+  if (!data) {
+    return;
+  }
+
+  BreakPoint* head = NULL;
+  BreakPoint* node = NULL;
+  json j = json::parse(data);
+  if (!j.is_array()) {
+    return;
+  }
+
+  for (auto& el : j.items()) {
+    json v = el.value();
+    if (v.contains("enable") && !v.at("enable")) {
+      continue;
+    }
+    if (v.contains("url") && v.contains("type")) {
+      string url = v.at("url");
+      int type = v.at("type");
+
+      if (type < RULE_REQ || type > RULE_RES) {
+        continue;
+      }
+      node = (BreakPoint*)malloc(sizeof(BreakPoint));
+      node->url = url;
+      node->type = (ruleType)type;
+      node->next = NULL;
+      if (head) {
+        head->next = node;
+        head = node;
+      } else {
+        this->breakpintList = node;
         head = node;
       }
     }
@@ -443,4 +498,17 @@ string RuleUtils::modBody(string body, string key, string val, bool isRegex, boo
     }
     return newBody;
   }
+}
+
+bool RuleUtils::ifHasHeader(string head, string header) {
+  string key = "(^|\r\n)";
+  key += header;
+  key += ":";
+
+  wregex reg(stringToWstring(key).c_str(), regex_constants::multiline | regex_constants::icase);
+  wsmatch matches;
+  wstring whead = stringToWstring(head);
+  
+  // return regex_search(whead, matches, reg);
+  return regex_search(whead, reg);
 }
