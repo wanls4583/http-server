@@ -56,6 +56,7 @@ void replaceBody(SockInfo& sockInfo, char* body);
 void resetHead(SockInfo& sockInfo, string head);
 void resetBody(SockInfo& sockInfo, string body);
 int reciveBody(SockInfo& sockInfo, bool ifWrite = true);
+bool ifHasBody(SockInfo& sockInfo, ruleType type);
 int checkRule(SockInfo& sockInfo, ruleType type, ruleMethodType methodType);
 int forward(SockInfo& sockInfo);
 void* forwardWebocket(void* arg);
@@ -1004,11 +1005,16 @@ int reciveBody(SockInfo& sockInfo, bool ifWrite) {
     return 1;
 }
 
+bool ifHasBody(SockInfo& sockInfo, ruleType type) {
+    char* method = sockInfo.localSockInfo ? sockInfo.localSockInfo->header->method : sockInfo.header->method;
+
+    return RULE_REQ == type && httpUtils.checkIfReqBody(sockInfo.header) || RULE_RES == type && httpUtils.checkIfResBody(sockInfo.header, method);
+}
+
 int checkRule(SockInfo& sockInfo, ruleType type, ruleMethodType methodType) {
     int bodyWay = -1;
     bool headChanged = false, bodyChanged = false, bodyRecived = false;
     bool isRemote = sockInfo.localSockInfo ? true : false;
-    char* method = sockInfo.localSockInfo ? sockInfo.localSockInfo->header->method : sockInfo.header->method;
     char* head = NULL;
     string body = "";
     string originUnChunkData = "";
@@ -1043,44 +1049,35 @@ int checkRule(SockInfo& sockInfo, ruleType type, ruleMethodType methodType) {
                     head = ruleUtils.delHeader(sockInfo.head, (char*)node->key.c_str(), node->enableReg, node->icase);
                     break;
                 case MODIFY_BODY_MOD: // 实体修改
-                case MODIFY_BODY_REP: // 实体替换
-                    if (RULE_REQ == type && httpUtils.checkIfReqBody(sockInfo.header) ||
-                        RULE_RES == type && httpUtils.checkIfResBody(sockInfo.header, method)) {
-                        if (!bodyRecived && !reciveBody(sockInfo, false)) {
-                            return 0;
-                        }
-                        unChunkData = bodyChanged ? body : (bodyRecived ? originUnChunkData : getUnChunkData(sockInfo));
+                    if (ifHasBody(sockInfo, type)) {
                         if (!bodyRecived) {
-                            originUnChunkData = unChunkData;
+                            if (!reciveBody(sockInfo, false)) {
+                                return 0;
+                            }
+                            bodyRecived = true;
                         }
-                        bodyRecived = true;
-                        if (MODIFY_BODY_MOD == node->method) {
-                            body = ruleUtils.modBody(unChunkData, node->key, node->value, node->enableReg);
-                            headChanged = true; // 提前修改过Transfer-Encoding等首部
-                            bodyChanged = true;
-                        }
-                    }
-                    if (MODIFY_BODY_REP == node->method) {
-                        body = node->value;
-                        headChanged = true; // 提前修改过Transfer-Encoding等首部
+                        unChunkData = bodyChanged ? body : getUnChunkData(sockInfo);
+                        body = ruleUtils.modBody(unChunkData, node->key, node->value, node->enableReg);
                         bodyChanged = true;
                     }
+                    break;
+                case MODIFY_BODY_REP: // 实体替换
+                    body = node->value;
+                    bodyChanged = true;
                     break;
                 case BREAK_POINT: // 断点执行
                     if (RULE_METHOD_HEAD == node->methodType) {
                         ruleBuf = string(sockInfo.head, sockInfo.headSize);
                         ruleBufSize = sockInfo.headSize;
                     } else {
-                        if (RULE_REQ == type && httpUtils.checkIfReqBody(sockInfo.header) ||
-                            RULE_RES == type && httpUtils.checkIfResBody(sockInfo.header, method)) {
-                            if (!bodyRecived && !reciveBody(sockInfo, false)) {
-                                return 0;
+                        if (ifHasBody(sockInfo, type)) {
+                            if (!bodyRecived) {
+                                if (!reciveBody(sockInfo, false)) {
+                                    return 0;
+                                }
+                                bodyRecived = true;
                             }
                             unChunkData = bodyChanged ? body : (bodyRecived ? originUnChunkData : getUnChunkData(sockInfo));
-                            if (!bodyRecived) {
-                                originUnChunkData = unChunkData;
-                            }
-                            bodyRecived = true;
                             replaceBody(sockInfo, (char*)unChunkData.c_str());
                         }
                         ruleBuf = string(sockInfo.body, sockInfo.bodySize);
@@ -1117,7 +1114,6 @@ int checkRule(SockInfo& sockInfo, ruleType type, ruleMethodType methodType) {
                         head = copyBuf(ruleStr.c_str());
                     } else {
                         body = ruleStr;
-                        headChanged = true; // 提前修改过Transfer-Encoding等首部
                         bodyChanged = true;
                     }
                     break;
@@ -1136,7 +1132,7 @@ int checkRule(SockInfo& sockInfo, ruleType type, ruleMethodType methodType) {
         node = node->next;
     }
 
-    if (headChanged) {
+    if (headChanged || bodyChanged) { // 修改了实体时，因为提前修改过Transfer-Encoding等首部，需要重新更新header，确保后面的reciveBody能不正确解析
         sockContainer.freeHeader(sockInfo.header);
         if (RULE_REQ == type) {
             sockInfo.header = httpUtils.getHttpReqHeader(sockInfo);
@@ -1149,10 +1145,7 @@ int checkRule(SockInfo& sockInfo, ruleType type, ruleMethodType methodType) {
         resetBody(sockInfo, body);
     }
 
-    if (MODIFY_BODY_REP == bodyWay || MODIFY_BODY_MOD == bodyWay && (
-        RULE_REQ == type && httpUtils.checkIfReqBody(sockInfo.header) ||
-        RULE_RES == type && httpUtils.checkIfResBody(sockInfo.header, method)
-        )) { // 提前修改Transfer-Encoding等首部，确保实体被浏览器正确被接收
+    if (MODIFY_BODY_REP == bodyWay || MODIFY_BODY_MOD == bodyWay && ifHasBody(sockInfo, type)) { // 提前修改Transfer-Encoding等首部，确保实体被浏览器正确被接收
         head = ruleUtils.delHeader(sockInfo.head, (char*)"content-length");
         if (head) {
             replaceHead(sockInfo, head);
