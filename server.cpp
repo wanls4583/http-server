@@ -516,7 +516,15 @@ int checkApi(SockInfo& sockInfo) {
         char* buf = NULL;
         ssize_t size = 0;
         if (!strncmp(type, "/rule", strlen("/rule"))) {
-            buf = dataUtils.getData(DATA_TYPE_RULE, 0, size);
+            contentType = (char*)"application/json";
+            type += strlen("/rule");
+            if (strlen(type)) {
+                if (!strncmp(type, "/on_off", strlen("/on_off"))) {
+                    buf = dataUtils.getData(DATA_TYPE_RULE_ENABLE, 0, size);
+                }
+            } else {
+                buf = dataUtils.getData(DATA_TYPE_RULE, 0, size);
+            }
         } else if (!strncmp(type, "/cert", strlen("/cert"))) {
             u_int64_t reqId = stoull(type + strlen("/cert") + 1);
             buf = dataUtils.getData(DATA_TYPE_CERT, reqId, size);
@@ -541,8 +549,17 @@ int checkApi(SockInfo& sockInfo) {
         ssize_t size = 0;
 
         if (!strncmp(type, "/rule", strlen("/rule"))) {
-            dataUtils.saveData(sockInfo.body, sockInfo.bodySize, DATA_TYPE_RULE);
-            ruleUtils.parseRule(sockInfo.body);
+            type += strlen("/rule");
+            if (strlen(type)) {
+                if (!strncmp(type, "/on", strlen("/on"))) {
+                    dataUtils.saveData((char*)"true", 4, DATA_TYPE_RULE_ENABLE);
+                } else if (!strncmp(type, "/off", strlen("/off"))) {
+                    dataUtils.saveData((char*)"false", 5, DATA_TYPE_RULE_ENABLE);
+                }
+            } else {
+                dataUtils.saveData(sockInfo.body, sockInfo.bodySize, DATA_TYPE_RULE);
+                ruleUtils.parseRule(sockInfo.body);
+            }
         } else if (!strncmp(type, "/clear", strlen("/clear"))) {
             tempLevelUtils.clear();
         } else if (!strncmp(type, "/breakpoint", strlen("/breakpoint"))) {

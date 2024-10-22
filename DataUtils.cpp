@@ -26,6 +26,10 @@ void DataUtils::saveData(char* data, u_int64_t dataLen, int type, u_int64_t reqI
     key = "rule";
     levelUtils = &persitLevelUtils;
     levelUtils->del(key);
+  } else if (DATA_TYPE_RULE_ENABLE == type) {
+    key = "ruleEnable";
+    levelUtils = &persitLevelUtils;
+    levelUtils->del(key);
   } else if (DATA_TYPE_CERT == type) {
     key = "cert:";
     key += to_string(reqId);
@@ -68,6 +72,9 @@ char* DataUtils::getData(int dataType, u_int64_t reqId, ssize_t& size) {
   string key = "";
   if (DATA_TYPE_RULE == dataType) {
     key = "rule";
+    levelUtils = &persitLevelUtils;
+  } else if (DATA_TYPE_RULE_ENABLE == dataType) {
+    key = "ruleEnable";
     levelUtils = &persitLevelUtils;
   } else if (DATA_TYPE_CERT == dataType) {
     key = "cert:";

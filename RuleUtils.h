@@ -24,6 +24,7 @@ typedef struct RuleNode {
   string url;
   string key;
   string value;
+  bool enableWildcard;
   bool enableReg;
   bool icase;
   RuleNode* next;

@@ -94,8 +94,12 @@ void RuleUtils::parseRule(char* data) {
       int method = v.at("method");
       string key = v.at("key");
       string value = v.at("value");
+      bool enableWildcard = false;
       bool enableReg = false;
       bool icase = false;
+      if (v.contains("enableWildcard")) {
+        enableWildcard = v.at("enableWildcard");
+      }
       if (v.contains("enableReg")) {
         enableReg = v.at("enableReg");
       }
@@ -120,6 +124,7 @@ void RuleUtils::parseRule(char* data) {
       node->method = (ruleMethod)method;
       node->key = key;
       node->value = value;
+      node->enableWildcard = enableWildcard;
       node->enableReg = enableReg;
       node->icase = icase;
       node->next = NULL;
